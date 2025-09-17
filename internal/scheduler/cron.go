@@ -98,6 +98,7 @@ func (s *Scheduler) RegisterJobs() error {
 	jobs := []Job{
 		services.NewDatabaseHealthCheckJob(s.db, s.redis, s.logger, s.metrics),
 		services.NewExampleCleanupJob(s.db, s.redis, s.logger, s.metrics),
+		services.NewJWKKeyRotationJob(s.logger),
 	}
 
 	for _, job := range jobs {

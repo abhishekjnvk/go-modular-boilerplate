@@ -38,8 +38,7 @@ type Config struct {
 	RedisClusterDB       int      `mapstructure:"redis_cluster_db"`
 
 	// JWT configuration
-	JWTSecretKey   string `mapstructure:"jwt_secret_key"`
-	JWTExpiryHours int    `mapstructure:"jwt_expiry_hours"`
+	JWTExpiryHours int `mapstructure:"jwt_expiry_hours"`
 
 	// Security headers configuration
 	SecurityHeadersEnabled  bool   `mapstructure:"security_headers_enabled"`
@@ -52,6 +51,8 @@ type Config struct {
 
 	// Environment (development, production, test)
 	Environment string `mapstructure:"environment"`
+
+	JWKRotationCron string `mapstructure:"jwk_rotation_cron"`
 }
 
 // LoadConfig reads configuration from file or environment variables
@@ -59,6 +60,7 @@ func LoadConfig(path string) (*Config, error) {
 	// Set default values
 	viper.SetDefault("server_port", 8080)
 	viper.SetDefault("jwt_expiry_hours", 24)
+	viper.SetDefault("jwk_rotation_cron", "0 0 * * *") // Default: daily at midnight
 	viper.SetDefault("environment", "development")
 
 	// Database defaults
@@ -109,9 +111,5 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	// Validate required configuration
-	if config.JWTSecretKey == "" {
-		return nil, fmt.Errorf("JWT secret key is required")
-	}
-
 	return &config, nil
 }

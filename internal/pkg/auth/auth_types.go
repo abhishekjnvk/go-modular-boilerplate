@@ -8,27 +8,54 @@ import (
 
 // User represents a user in the authentication system
 type User struct {
-	ID        string    `json:"id" db:"id"`
-	Email     string    `json:"email" db:"email"`
-	Password  string    `json:"-" db:"password_hash"` // Password hash, not returned in JSON
-	FirstName string    `json:"first_name" db:"first_name"`
-	LastName  string    `json:"last_name" db:"last_name"`
-	CreatedAt time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
+	ID                string    `json:"id" db:"id"`
+	Email             string    `json:"email" db:"email"`
+	Password          string    `json:"-" db:"password_hash"` // Password hash, not returned in JSON
+	EmailVerified     bool      `json:"email_verified" db:"email_verified"`
+	VendorID          string    `json:"vendor_id" db:"vendor_id"`
+	Country           *string   `json:"country" db:"country"`
+	City              *string   `json:"city" db:"city"`
+	IsActive          bool      `json:"is_active" db:"is_active"`
+	IsDisabled        bool      `json:"is_disabled" db:"is_disabled"`
+	EnableSocialLogin bool      `json:"enable_social_login" db:"enable_social_login"`
+	SignupSource      *string   `json:"signup_source" db:"signup_source"`
+	CreatedAt         time.Time `json:"created_at" db:"created_at"`
+}
+
+// Session represents a user session in the authentication system
+type Session struct {
+	ID                string     `json:"id" db:"id"`
+	UserID            string     `json:"user_id" db:"user_id"`
+	TokenHash         string     `json:"-" db:"token_hash"` // Token hash, not returned in JSON
+	IPAddress         string     `json:"ip_address" db:"ip_address"`
+	DeviceName        *string    `json:"device_name" db:"device_name"`
+	DeviceFingerprint *string    `json:"device_fingerprint" db:"device_fingerprint"`
+	IsActive          bool       `json:"is_active" db:"is_active"`
+	TrustedDevice     bool       `json:"trusted_device" db:"trusted_device"`
+	CreatedAt         time.Time  `json:"created_at" db:"created_at"`
+	ValidTill         time.Time  `json:"valid_till" db:"valid_till"`
+	LastUsed          *time.Time `json:"last_used" db:"last_used"`
+	RevokedAt         *time.Time `json:"revoked_at" db:"revoked_at"`
+}
+
+// DeviceInfo represents device information for session tracking
+type DeviceInfo struct {
+	Name        *string
+	Fingerprint *string
 }
 
 // LoginRequest represents the login request payload
 type LoginRequest struct {
-	Email    string `json:"email" validate:"required,email"`
-	Password string `json:"password" validate:"required,min=8"`
+	Email    string  `json:"email" validate:"required,email"`
+	Password string  `json:"password" validate:"required,min=6"`
+	VendorID *string `json:"vendor_id" validate:"required"`
 }
 
 // RegisterRequest represents the registration request payload
 type RegisterRequest struct {
-	Email     string `json:"email" validate:"required,email"`
-	Password  string `json:"password" validate:"required,min=8"`
-	FirstName string `json:"first_name" validate:"required"`
-	LastName  string `json:"last_name" validate:"required"`
+	Email    string  `json:"email" validate:"required,email"`
+	Password string  `json:"password" validate:"required,min=6"`
+	VendorID *string `json:"vendor_id" validate:"required"`
 }
 
 // LoginResponse represents the login response payload

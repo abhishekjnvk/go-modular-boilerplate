@@ -37,3 +37,6 @@ docker-compose.override.yml
 # Configuration files
 configs/config.yaml
 
+# JWK keys
+jwk-keys/
+

@@ -9,7 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 
-	"go-boilerplate/internal/app/config"
+	"go-boilerplate/internal/shared"
 	"go-boilerplate/internal/shared/logger"
 	"go-boilerplate/internal/shared/utils"
 )
@@ -21,16 +21,16 @@ const UserIDKey contextKey = "user_id"
 
 // AuthMiddleware provides JWT authentication functionality
 type AuthMiddleware struct {
-	jwtSecret string
-	logger    *logger.Logger
+	keyManager *shared.JWKKeyManager
+	logger     *logger.Logger
 }
 
 // NewAuthMiddleware creates a new authentication middleware
-func NewAuthMiddleware(cfg *config.Config, log *logger.Logger) *AuthMiddleware {
+func NewAuthMiddleware(keyManager *shared.JWKKeyManager, log *logger.Logger) (*AuthMiddleware, error) {
 	return &AuthMiddleware{
-		jwtSecret: cfg.JWTSecretKey,
-		logger:    log.Named("auth-middleware"),
-	}
+		keyManager: keyManager,
+		logger:     log.Named("auth-middleware"),
+	}, nil
 }
 
 // Authenticate validates JWT tokens from the Authorization header
@@ -66,23 +66,35 @@ func (m *AuthMiddleware) Authenticate(next http.Handler) http.Handler {
 
 		// Parse the token
 		tokenStr := bearerToken[1]
-		token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
-			// Validate signing algorithm
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, utils.NewHTTPError(
-					http.StatusUnauthorized,
-					"Invalid token signing method",
-					nil,
-				)
-			}
-			return []byte(m.jwtSecret), nil
-		})
+		validKeys := m.keyManager.GetValidKeys()
+		var lastErr error
+		var validToken *jwt.Token
 
-		if err != nil || !token.Valid {
+		for _, key := range validKeys {
+			token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
+				// Validate signing algorithm
+				if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+					return nil, utils.NewHTTPError(
+						http.StatusUnauthorized,
+						"Invalid token signing method",
+						nil,
+					)
+				}
+				return key.PublicKey, nil
+			})
+
+			if err == nil && token.Valid {
+				validToken = token
+				break
+			}
+			lastErr = err
+		}
+
+		if validToken == nil {
 			utils.RespondWithError(
 				w, r, start,
 				"Invalid or expired token",
-				err,
+				lastErr,
 				http.StatusUnauthorized,
 				m.logger,
 			)
@@ -90,7 +102,7 @@ func (m *AuthMiddleware) Authenticate(next http.Handler) http.Handler {
 		}
 
 		// Extract user ID from token claims
-		claims, ok := token.Claims.(jwt.MapClaims)
+		claims, ok := validToken.Claims.(jwt.MapClaims)
 		if !ok {
 			utils.RespondWithError(
 				w, r, start,
@@ -148,23 +160,33 @@ func (m *AuthMiddleware) GinAuthenticate(c *gin.Context) {
 
 	// Parse the token
 	tokenStr := bearerToken[1]
-	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
-		// Validate signing algorithm
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token signing method"})
-			return nil, nil
-		}
-		return []byte(m.jwtSecret), nil
-	})
+	validKeys := m.keyManager.GetValidKeys()
+	var validToken *jwt.Token
 
-	if err != nil || !token.Valid {
+	for _, key := range validKeys {
+		token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
+			// Validate signing algorithm
+			if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token signing method"})
+				return nil, nil
+			}
+			return key.PublicKey, nil
+		})
+
+		if err == nil && token.Valid {
+			validToken = token
+			break
+		}
+	}
+
+	if validToken == nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
 		c.Abort()
 		return
 	}
 
 	// Extract user ID from token claims
-	claims, ok := token.Claims.(jwt.MapClaims)
+	claims, ok := validToken.Claims.(jwt.MapClaims)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token claims"})
 		c.Abort()

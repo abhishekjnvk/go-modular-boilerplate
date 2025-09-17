@@ -14,6 +14,10 @@ import (
 type AuthRepository interface {
 	FindUserByEmail(ctx context.Context, email string) (*auth.User, error)
 	CreateUser(ctx context.Context, user *auth.User) error
+	CreateSession(ctx context.Context, session *auth.Session) error
+	FindSessionByTokenHash(ctx context.Context, tokenHash string) (*auth.Session, error)
+	UpdateSessionLastUsed(ctx context.Context, sessionID string) error
+	RevokeSession(ctx context.Context, sessionID string) error
 }
 
 // PostgresAuthRepository is a PostgreSQL implementation of AuthRepository
@@ -33,9 +37,9 @@ func NewPostgresAuthRepository(rwDB *database.ReadWriteDatabase, log *logger.Log
 // FindUserByEmail finds a user by email
 func (r *PostgresAuthRepository) FindUserByEmail(ctx context.Context, email string) (*auth.User, error) {
 	query := `
-		SELECT id, email, password_hash, first_name, last_name, created_at, updated_at
+		SELECT id, email, password_hash, email_verified, vendor_id, country, city, is_active, is_disabled, enable_social_login, signup_source, created_at
 		FROM users
-		WHERE email = $1
+		WHERE email = $1 AND is_active = true
 	`
 
 	var user auth.User
@@ -53,8 +57,8 @@ func (r *PostgresAuthRepository) FindUserByEmail(ctx context.Context, email stri
 // CreateUser creates a new user
 func (r *PostgresAuthRepository) CreateUser(ctx context.Context, user *auth.User) error {
 	query := `
-		INSERT INTO users (id, email, password_hash, first_name, last_name, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO users (id, email, password_hash, email_verified, vendor_id, country, city, is_active, is_disabled, enable_social_login, signup_source, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 	`
 
 	_, err := r.rwDB.WriteDB().ExecContext(
@@ -63,11 +67,87 @@ func (r *PostgresAuthRepository) CreateUser(ctx context.Context, user *auth.User
 		user.ID,
 		user.Email,
 		user.Password,
-		user.FirstName,
-		user.LastName,
+		user.EmailVerified,
+		user.VendorID,
+		user.Country,
+		user.City,
+		user.IsActive,
+		user.IsDisabled,
+		user.EnableSocialLogin,
+		user.SignupSource,
 		user.CreatedAt,
-		user.UpdatedAt,
 	)
 
+	return err
+}
+
+// CreateSession creates a new session
+func (r *PostgresAuthRepository) CreateSession(ctx context.Context, session *auth.Session) error {
+	query := `
+		INSERT INTO auth_session (id, user_id, token_hash, ip_address, device_name, device_fingerprint, is_active, trusted_device, created_at, valid_till, last_used, revoked_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+	`
+
+	_, err := r.rwDB.WriteDB().ExecContext(
+		ctx,
+		query,
+		session.ID,
+		session.UserID,
+		session.TokenHash,
+		session.IPAddress,
+		session.DeviceName,
+		session.DeviceFingerprint,
+		session.IsActive,
+		session.TrustedDevice,
+		session.CreatedAt,
+		session.ValidTill,
+		session.LastUsed,
+		session.RevokedAt,
+	)
+
+	return err
+}
+
+// FindSessionByTokenHash finds a session by token hash
+func (r *PostgresAuthRepository) FindSessionByTokenHash(ctx context.Context, tokenHash string) (*auth.Session, error) {
+	query := `
+		SELECT id, user_id, token_hash, ip_address, device_name, device_fingerprint, is_active, trusted_device, created_at, valid_till, last_used, revoked_at
+		FROM auth_session
+		WHERE token_hash = $1 AND is_active = true
+	`
+
+	var session auth.Session
+	err := r.rwDB.ReadDB().GetContext(ctx, &session, query, tokenHash)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, auth.ErrUserNotFound // Could define ErrSessionNotFound
+		}
+		return nil, err
+	}
+
+	return &session, nil
+}
+
+// UpdateSessionLastUsed updates the last used time for a session
+func (r *PostgresAuthRepository) UpdateSessionLastUsed(ctx context.Context, sessionID string) error {
+	query := `
+		UPDATE auth_session
+		SET last_used = CURRENT_TIMESTAMP
+		WHERE id = $1 AND is_active = true
+	`
+
+	_, err := r.rwDB.WriteDB().ExecContext(ctx, query, sessionID)
+	return err
+}
+
+// RevokeSession revokes a session
+func (r *PostgresAuthRepository) RevokeSession(ctx context.Context, sessionID string) error {
+	query := `
+		UPDATE auth_session
+		SET is_active = false, revoked_at = CURRENT_TIMESTAMP
+		WHERE id = $1
+	`
+
+	_, err := r.rwDB.WriteDB().ExecContext(ctx, query, sessionID)
 	return err
 }

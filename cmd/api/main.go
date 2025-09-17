@@ -21,6 +21,7 @@ import (
 	userHttp "go-boilerplate/internal/pkg/user/delivery/http"
 	userRepository "go-boilerplate/internal/pkg/user/repository"
 	userService "go-boilerplate/internal/pkg/user/service"
+	"go-boilerplate/internal/shared"
 	"go-boilerplate/internal/shared/cache"
 	"go-boilerplate/internal/shared/database"
 	"go-boilerplate/internal/shared/logger"
@@ -64,8 +65,14 @@ func main() {
 	}
 	defer redisClient.Close()
 
+	// Initialize JWT key manager
+	keyManager := shared.NewJWKKeyManager(appLogger.Logger)
+
 	// Initialize middleware
-	authMiddleware := middleware.NewAuthMiddleware(cfg, appLogger)
+	authMiddleware, err := middleware.NewAuthMiddleware(keyManager, appLogger)
+	if err != nil {
+		appLogger.Fatal("Failed to initialize auth middleware", zap.Error(err))
+	}
 	loggingMiddleware := middleware.NewLoggingMiddleware(appLogger)
 	recoveryMiddleware := middleware.NewRecoveryMiddleware(appLogger)
 	securityMiddleware := middleware.NewSecurityMiddleware(appLogger, cfg.Environment == "development")
@@ -79,7 +86,10 @@ func main() {
 	userRepo := userRepository.NewPostgresUserRepository(rwDB, appLogger)
 
 	// Initialize services
-	authSvc := authService.NewAuthService(authRepo, cfg, appLogger, metricsCollector)
+	authSvc, err := authService.NewAuthService(authRepo, cfg, appLogger, metricsCollector, keyManager)
+	if err != nil {
+		appLogger.Fatal("Failed to initialize auth service", zap.Error(err))
+	}
 	userSvc := userService.NewUserService(userRepo, appLogger)
 
 	// Initialize health service

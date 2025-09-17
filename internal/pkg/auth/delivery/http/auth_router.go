@@ -17,6 +17,9 @@ func (h *AuthHandler) RegisterGinRoutes(r *gin.RouterGroup, authMiddleware *midd
 		// POST /auth/register - Registration endpoint
 		auth.POST("/register", h.GinRegister)
 
+		// GET /auth/jwk-key - JWK endpoint
+		auth.GET("/jwk-key", h.GinJWKKey)
+
 		// Protected routes example
 		protected := auth.Group("")
 		protected.Use(authMiddleware.GinAuthenticate)
