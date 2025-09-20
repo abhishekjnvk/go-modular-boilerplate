@@ -9,11 +9,13 @@ import (
 	"go-boilerplate/internal/pkg/auth"
 	"go-boilerplate/internal/pkg/user"
 	"go-boilerplate/internal/shared/database"
+	"go-boilerplate/internal/shared/interfaces"
 	"go-boilerplate/internal/shared/logger"
 )
 
 // UserRepository defines the interface for user operations
 type UserRepository interface {
+	interfaces.Repository
 	GetUserByID(ctx context.Context, id string) (*user.Profile, error)
 	UpdateUser(ctx context.Context, id string, updates map[string]interface{}) error
 }

@@ -1,7 +1,7 @@
 package user
 
 import (
-	"github.com/go-playground/validator/v10"
+	validator "github.com/go-playground/validator/v10"
 
 	"go-boilerplate/internal/pkg/auth"
 )
@@ -43,14 +43,6 @@ var (
 type UserError struct {
 	Message string
 	Code    int // HTTP status code
-}
-
-// NewUserError creates a new UserError with default 500 status
-func NewUserError(message string) *UserError {
-	return &UserError{
-		Message: message,
-		Code:    500, // Default to internal server error
-	}
 }
 
 // NewUserErrorWithCode creates a new UserError with specific HTTP status code

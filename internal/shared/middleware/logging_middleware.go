@@ -66,7 +66,7 @@ func (m *LoggingMiddleware) LogRequest(next http.Handler) http.Handler {
 		}
 
 		// Set session ID in context for downstream handlers
-		ctx := context.WithValue(r.Context(), "session_id", sessionID)
+		ctx := context.WithValue(r.Context(), SessionIDKey, sessionID)
 		r = r.WithContext(ctx)
 
 		// Log the request
@@ -130,7 +130,7 @@ func (m *LoggingMiddleware) GinLogRequest(c *gin.Context) {
 
 	// Set session ID in Gin context and request context
 	c.Set("session_id", sessionID)
-	ctx := context.WithValue(c.Request.Context(), "session_id", sessionID)
+	ctx := context.WithValue(c.Request.Context(), SessionIDKey, sessionID)
 	c.Request = c.Request.WithContext(ctx)
 
 	// Log the request

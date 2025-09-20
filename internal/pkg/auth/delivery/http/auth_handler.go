@@ -1,87 +1,61 @@
 package authHttp
 
 import (
-	"crypto/sha256"
 	"fmt"
-	"net"
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	"go-boilerplate/internal/pkg/auth"
 	authService "go-boilerplate/internal/pkg/auth/service"
+	"go-boilerplate/internal/shared/cache"
 	"go-boilerplate/internal/shared/logger"
 	"go-boilerplate/internal/shared/utils"
+	deviceUtils "go-boilerplate/internal/utils"
 )
 
 // AuthHandler handles HTTP requests for authentication operations
 type AuthHandler struct {
 	service         authService.AuthService
+	cache           *cache.Redis
 	logger          *logger.Logger
 	responseHandler *utils.ResponseHandler
 }
 
 // NewAuthHandler creates a new authentication handler
-func NewAuthHandler(svc authService.AuthService, log *logger.Logger) *AuthHandler {
+func NewAuthHandler(svc authService.AuthService, redisCache *cache.Redis, log *logger.Logger) *AuthHandler {
 	return &AuthHandler{
 		service:         svc,
+		cache:           redisCache,
 		logger:          log.Named("auth-handler"),
 		responseHandler: utils.NewResponseHandler(log.Named("auth-responses")),
 	}
 }
 
-// getClientIP extracts the client IP address from the request
+// getClientIP delegates client IP extraction to device utils
 func getClientIP(r *http.Request) string {
-	// Check X-Forwarded-For header first (for proxies/load balancers)
-	xff := r.Header.Get("X-Forwarded-For")
-	if xff != "" {
-		// X-Forwarded-For can contain multiple IPs, take the first one
-		if idx := strings.Index(xff, ","); idx > 0 {
-			return strings.TrimSpace(xff[:idx])
-		}
-		return strings.TrimSpace(xff)
-	}
-
-	// Check X-Real-IP header
-	xri := r.Header.Get("X-Real-IP")
-	if xri != "" {
-		return strings.TrimSpace(xri)
-	}
-
-	// Fall back to RemoteAddr
-	ip, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return ip
+	return deviceUtils.GetClientIP(r)
 }
 
-// getDeviceInfo extracts device information from the request
-func getDeviceInfo(r *http.Request) *auth.DeviceInfo {
-	userAgent := r.Header.Get("User-Agent")
-
-	// Simple device detection based on User-Agent
-	var deviceName *string
-	if strings.Contains(strings.ToLower(userAgent), "mobile") {
-		name := "Mobile Device"
-		deviceName = &name
-	} else if strings.Contains(strings.ToLower(userAgent), "tablet") {
-		name := "Tablet"
-		deviceName = &name
-	} else {
-		name := "Desktop"
-		deviceName = &name
-	}
-
-	// For fingerprint, we could use a combination of User-Agent and other headers
-	// For now, just use User-Agent hash
-	fingerprint := fmt.Sprintf("%x", sha256.Sum256([]byte(userAgent)))
+// getDeviceInfo delegates device detection to shared utils and maps to auth.DeviceInfo
+func (h *AuthHandler) getDeviceInfo(r *http.Request) *auth.DeviceInfo {
+	di := deviceUtils.DetectDeviceWithCache(r, h.cache)
 
 	return &auth.DeviceInfo{
-		Name:        deviceName,
-		Fingerprint: &fingerprint,
+		Name:        di.DeviceName,
+		Fingerprint: di.Fingerprint,
+		TrustScore:  di.RiskScore,
+		City:        di.City,
+		Country:     di.Country,
+		Region:      di.Region,
+		Timezone:    di.Timezone,
+		ISP:         di.ISP,
 	}
+}
+
+// getGinDeviceInfo delegates device detection for Gin requests and maps to auth.DeviceInfo
+func (h *AuthHandler) getGinDeviceInfo(c *gin.Context) *auth.DeviceInfo {
+	return h.getDeviceInfo(c.Request)
 }
 
 // Login handles the login request
@@ -95,7 +69,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	// Get client IP and device info
 	ipAddress := getClientIP(r)
-	deviceInfo := getDeviceInfo(r)
+	deviceInfo := h.getDeviceInfo(r)
 
 	// Call service
 	resp, err := h.service.Login(r.Context(), &req, ipAddress, deviceInfo)
@@ -118,7 +92,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	// Get client IP and device info
 	ipAddress := getClientIP(r)
-	deviceInfo := getDeviceInfo(r)
+	deviceInfo := h.getDeviceInfo(r)
 
 	// Call service
 	user, err := h.service.Register(r.Context(), &req, ipAddress, deviceInfo)
@@ -139,27 +113,9 @@ func (h *AuthHandler) GinLogin(c *gin.Context) {
 		return
 	}
 
-	// Get client IP and device info
-	ipAddress := c.ClientIP()
-	userAgent := c.GetHeader("User-Agent")
-
-	var deviceName *string
-	if strings.Contains(strings.ToLower(userAgent), "mobile") {
-		name := "Mobile Device"
-		deviceName = &name
-	} else if strings.Contains(strings.ToLower(userAgent), "tablet") {
-		name := "Tablet"
-		deviceName = &name
-	} else {
-		name := "Desktop"
-		deviceName = &name
-	}
-
-	fingerprint := fmt.Sprintf("%x", sha256.Sum256([]byte(userAgent)))
-	deviceInfo := &auth.DeviceInfo{
-		Name:        deviceName,
-		Fingerprint: &fingerprint,
-	}
+	// Get client IP and device info using device utils
+	ipAddress := deviceUtils.GetClientIP(c.Request)
+	deviceInfo := h.getGinDeviceInfo(c)
 
 	// Call service
 	resp, err := h.service.Login(c.Request.Context(), &req, ipAddress, deviceInfo)
@@ -180,27 +136,9 @@ func (h *AuthHandler) GinRegister(c *gin.Context) {
 		return
 	}
 
-	// Get client IP and device info
-	ipAddress := c.ClientIP()
-	userAgent := c.GetHeader("User-Agent")
-
-	var deviceName *string
-	if strings.Contains(strings.ToLower(userAgent), "mobile") {
-		name := "Mobile Device"
-		deviceName = &name
-	} else if strings.Contains(strings.ToLower(userAgent), "tablet") {
-		name := "Tablet"
-		deviceName = &name
-	} else {
-		name := "Desktop"
-		deviceName = &name
-	}
-
-	fingerprint := fmt.Sprintf("%x", sha256.Sum256([]byte(userAgent)))
-	deviceInfo := &auth.DeviceInfo{
-		Name:        deviceName,
-		Fingerprint: &fingerprint,
-	}
+	// Get client IP and device info using device utils
+	ipAddress := deviceUtils.GetClientIP(c.Request)
+	deviceInfo := h.getGinDeviceInfo(c)
 
 	// Call service
 	user, err := h.service.Register(c.Request.Context(), &req, ipAddress, deviceInfo)
@@ -223,7 +161,7 @@ func (h *AuthHandler) RefreshToken(w http.ResponseWriter, r *http.Request) {
 
 	// Get client IP and device info
 	ipAddress := getClientIP(r)
-	deviceInfo := getDeviceInfo(r)
+	deviceInfo := h.getDeviceInfo(r)
 
 	// Call service
 	resp, err := h.service.RefreshToken(r.Context(), &req, ipAddress, deviceInfo)
@@ -243,13 +181,9 @@ func (h *AuthHandler) GinRefreshToken(c *gin.Context) {
 		return
 	}
 
-	// Get client IP and device info
-	ipAddress := c.ClientIP()
-	userAgent := c.Request.UserAgent()
-	deviceInfo := &auth.DeviceInfo{
-		Name:        &userAgent,
-		Fingerprint: nil, // Could be implemented based on device fingerprinting
-	}
+	// Get client IP and device info using device utils
+	ipAddress := deviceUtils.GetClientIP(c.Request)
+	deviceInfo := h.getGinDeviceInfo(c)
 
 	// Call service
 	resp, err := h.service.RefreshToken(c.Request.Context(), &req, ipAddress, deviceInfo)

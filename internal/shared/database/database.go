@@ -106,7 +106,7 @@ func New(cfg *Config, log *logger.Logger, metrics *metrics.Metrics) (*Database, 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	if err := db.PingContext(ctx); err != nil {
+	if err := db.DB.PingContext(ctx); err != nil {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
@@ -155,7 +155,7 @@ func (db *Database) HealthCheck(ctx context.Context) error {
 	checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	if err := db.PingContext(checkCtx); err != nil {
+	if err := db.DB.PingContext(checkCtx); err != nil {
 		db.logger.Error("Database health check failed", zap.Error(err))
 		return fmt.Errorf("database health check failed: %w", err)
 	}

@@ -11,107 +11,39 @@ import (
 	"go.uber.org/zap"
 
 	"go-boilerplate/internal/app/api"
-	"go-boilerplate/internal/app/config"
-	authHttp "go-boilerplate/internal/pkg/auth/delivery/http"
-	authRepository "go-boilerplate/internal/pkg/auth/repository"
-	authService "go-boilerplate/internal/pkg/auth/service"
-	"go-boilerplate/internal/pkg/health"
-	healthHttp "go-boilerplate/internal/pkg/health/delivery/http"
-	healthService "go-boilerplate/internal/pkg/health/service"
-	userHttp "go-boilerplate/internal/pkg/user/delivery/http"
-	userRepository "go-boilerplate/internal/pkg/user/repository"
-	userService "go-boilerplate/internal/pkg/user/service"
-	"go-boilerplate/internal/shared/cache"
-	"go-boilerplate/internal/shared/database"
-	"go-boilerplate/internal/shared/logger"
-	"go-boilerplate/internal/shared/metrics"
-	"go-boilerplate/internal/shared/middleware"
+	"go-boilerplate/internal/app/bootstrap"
 )
 
 func main() {
-	// Load configuration
-	cfg, err := config.LoadConfig("./configs")
+	// Initialize container with all dependencies
+	container, err := bootstrap.NewContainer(bootstrap.ContainerOptions{
+		ConfigPath: "./configs",
+	})
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		log.Fatalf("Failed to initialize container: %v", err)
 	}
 
-	// Initialize logger
-	appLogger := logger.New(cfg.Environment)
-	defer appLogger.Sync()
+	// Ensure graceful cleanup
+	defer func() {
+		if err := container.Close(); err != nil {
+			container.Logger.Error("Failed to close container gracefully", zap.Error(err))
+		}
+	}()
 
-	// Initialize metrics (if enabled)
-	var metricsCollector *metrics.Metrics
-	if cfg.MetricsEnabled {
-		metricsCollector = metrics.New(appLogger)
-	}
-
-	// Initialize database connection
-	rwDBConfig := database.NewReadWriteConfig(cfg)
-	rwDB, err := database.NewReadWriteDatabase(rwDBConfig, appLogger, metricsCollector)
-	if err != nil {
-		appLogger.Fatal("Failed to connect to database", zap.Error(err))
-	}
-	defer rwDB.Close()
-
-	// Start database health monitoring
-	// ctx := context.Background()
-
-	// Initialize Redis connection
-	redisConfig := cache.DefaultConfig(cfg)
-	redisClient, err := cache.New(redisConfig, appLogger)
-	if err != nil {
-		appLogger.Fatal("Failed to connect to Redis", zap.Error(err))
-	}
-	defer redisClient.Close()
-
-	// Initialize middleware
-	authMiddleware, err := middleware.NewAuthMiddleware(appLogger)
-	if err != nil {
-		appLogger.Fatal("Failed to initialize auth middleware", zap.Error(err))
-	}
-	loggingMiddleware := middleware.NewLoggingMiddleware(appLogger)
-	recoveryMiddleware := middleware.NewRecoveryMiddleware(appLogger)
-	securityMiddleware := middleware.NewSecurityMiddleware(appLogger, cfg.Environment == "development")
-	requestIDMiddleware := middleware.NewRequestIDMiddleware(appLogger)
-
-	// Initialize rate limiting middleware
-	rateLimitConfig := middleware.DefaultRateLimitConfig()
-	rateLimitMiddleware := middleware.NewRateLimitMiddleware(rateLimitConfig, redisClient, appLogger)
-
-	// Initialize repositories
-	authRepo := authRepository.NewPostgresAuthRepository(rwDB, appLogger)
-	userRepo := userRepository.NewPostgresUserRepository(rwDB, appLogger)
-
-	// Initialize services
-	authSvc, err := authService.NewAuthService(authRepo, cfg, appLogger, metricsCollector)
-	if err != nil {
-		appLogger.Fatal("Failed to initialize auth service", zap.Error(err))
-	}
-	userSvc := userService.NewUserService(userRepo, appLogger)
-
-	// Initialize health service
-	healthSvc := healthService.NewHealthService("1.0.0", appLogger)
-	healthSvc.AddChecker(health.NewRedisHealthChecker(redisClient, appLogger))
-
-	// Initialize handlers
-	authHandler := authHttp.NewAuthHandler(authSvc, appLogger)
-	userHandler := userHttp.NewUserHandler(userSvc, appLogger)
-	healthHandler := healthHttp.NewHealthHandler(healthSvc, appLogger)
-
-	// Initialize HTTP server
+	// Initialize HTTP server with all dependencies from container
 	serverOptions := &api.ServerOptions{
-		Config:              cfg,
-		Logger:              appLogger,
-		AuthHandler:         authHandler,
-		UserHandler:         userHandler,
-		HealthHandler:       healthHandler,
-		AuthMiddleware:      authMiddleware,
-		LoggingMiddleware:   loggingMiddleware,
-		RecoveryMiddleware:  recoveryMiddleware,
-		SecurityMiddleware:  securityMiddleware,
-		RateLimitMiddleware: rateLimitMiddleware,
-		RequestIDMiddleware: requestIDMiddleware,
-		Metrics:             metricsCollector,
+		Config:              container.Config,
+		Logger:              container.Logger,
+		AuthHandler:         container.AuthHandler,
+		UserHandler:         container.UserHandler,
+		HealthHandler:       container.HealthHandler,
+		AuthMiddleware:      container.AuthMiddleware,
+		LoggingMiddleware:   container.LoggingMiddleware,
+		RecoveryMiddleware:  container.RecoveryMiddleware,
+		SecurityMiddleware:  container.SecurityMiddleware,
+		RateLimitMiddleware: container.RateLimitMiddleware,
+		RequestIDMiddleware: container.RequestIDMiddleware,
+		Metrics:             container.Metrics,
 	}
 
 	server := api.NewServer(serverOptions)
@@ -123,15 +55,27 @@ func main() {
 	// Start server in a goroutine
 	go func() {
 		if err := server.Start(); err != nil {
-			appLogger.Fatal("Failed to start server", zap.Error(err))
+			container.Logger.Fatal("Failed to start server", zap.Error(err))
 		}
 	}()
 
-	appLogger.Info("Server is running", zap.Int("port", cfg.ServerPort), zap.String("environment", cfg.Environment))
+	container.Logger.Info("Server is running",
+		zap.Int("port", container.Config.ServerPort),
+		zap.String("environment", container.Config.Environment))
+
+	// Perform initial health check
+	healthCtx, healthCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer healthCancel()
+
+	if err := container.Health(healthCtx); err != nil {
+		container.Logger.Warn("Initial health check failed", zap.Error(err))
+	} else {
+		container.Logger.Info("Initial health check passed")
+	}
 
 	// Wait for interrupt signal
 	<-done
-	appLogger.Info("Server is shutting down...")
+	container.Logger.Info("Server is shutting down...")
 
 	// Create a deadline for graceful shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -139,8 +83,8 @@ func main() {
 
 	// Attempt graceful shutdown
 	if err := server.Stop(ctx); err != nil {
-		appLogger.Fatal("Server shutdown failed", zap.Error(err))
+		container.Logger.Fatal("Server shutdown failed", zap.Error(err))
 	}
 
-	appLogger.Info("Server gracefully stopped")
+	container.Logger.Info("Server gracefully stopped")
 }

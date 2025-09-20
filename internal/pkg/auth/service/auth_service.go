@@ -13,6 +13,7 @@ import (
 	"go-boilerplate/internal/app/config"
 	"go-boilerplate/internal/pkg/auth"
 	authRepository "go-boilerplate/internal/pkg/auth/repository"
+	"go-boilerplate/internal/shared/interfaces"
 	jwkKeyManager "go-boilerplate/internal/shared/jwk"
 	"go-boilerplate/internal/shared/logger"
 	"go-boilerplate/internal/shared/metrics"
@@ -22,6 +23,7 @@ import (
 
 // AuthService defines the interface for authentication service
 type AuthService interface {
+	interfaces.Service
 	Login(ctx context.Context, req *auth.LoginRequest, ipAddress string, deviceInfo *auth.DeviceInfo) (*auth.LoginResponse, error)
 	Register(ctx context.Context, req *auth.RegisterRequest, ipAddress string, deviceInfo *auth.DeviceInfo) (*auth.User, error)
 	RefreshToken(ctx context.Context, req *auth.RefreshTokenRequest, ipAddress string, deviceInfo *auth.DeviceInfo) (*auth.RefreshTokenResponse, error)
@@ -128,9 +130,15 @@ func (s *DefaultAuthService) Login(ctx context.Context, req *auth.LoginRequest, 
 		RefreshTokenHash:  refreshTokenHashStr,
 		IPAddress:         ipAddress,
 		DeviceName:        deviceInfo.Name,
+		TrustScore:        deviceInfo.TrustScore,
+		City:              deviceInfo.City,
+		Country:           deviceInfo.Country,
+		Region:            deviceInfo.Region,
+		Timezone:          deviceInfo.Timezone,
+		ISP:               deviceInfo.ISP,
 		DeviceFingerprint: deviceInfo.Fingerprint,
 		IsActive:          true,
-		TrustedDevice:     false, // Could be determined based on previous logins
+		TrustedDevice:     deviceInfo.TrustScore < 30, // Trust devices with low risk scores
 		CreatedAt:         time.Now().UTC(),
 		ValidTill:         time.Now().UTC().Add(7 * 24 * time.Hour), // 7 days for refresh token validity
 		LastUsed:          nil,
@@ -221,9 +229,15 @@ func (s *DefaultAuthService) Register(ctx context.Context, req *auth.RegisterReq
 			RefreshTokenHash:  tokenHashStr,
 			IPAddress:         ipAddress,
 			DeviceName:        deviceInfo.Name,
+			TrustScore:        deviceInfo.TrustScore,
+			City:              deviceInfo.City,
+			Country:           deviceInfo.Country,
+			Region:            deviceInfo.Region,
+			Timezone:          deviceInfo.Timezone,
+			ISP:               deviceInfo.ISP,
 			DeviceFingerprint: deviceInfo.Fingerprint,
 			IsActive:          true,
-			TrustedDevice:     false,
+			TrustedDevice:     deviceInfo.TrustScore < 30, // Trust devices with low risk scores
 			CreatedAt:         now,
 			ValidTill:         now.Add(time.Duration(s.config.RefreshTokenExpiryHour) * time.Hour),
 			LastUsed:          nil,
@@ -324,14 +338,14 @@ func (s *DefaultAuthService) RefreshToken(ctx context.Context, req *auth.Refresh
 	}
 
 	// Validate device fingerprint if provided
-	if deviceInfo.Fingerprint != nil && session.DeviceFingerprint != nil {
-		if *deviceInfo.Fingerprint != *session.DeviceFingerprint {
+	if deviceInfo.Fingerprint != "" && session.DeviceFingerprint != "" {
+		if deviceInfo.Fingerprint != session.DeviceFingerprint {
 			s.logger.Warn("Device fingerprint mismatch during token refresh",
 				zap.String("session_id", session.ID),
 				zap.String("user_id", session.UserID))
 			return nil, auth.ErrInvalidRefreshToken
 		}
-	} else if deviceInfo.Fingerprint != nil && session.DeviceFingerprint == nil {
+	} else if deviceInfo.Fingerprint != "" && session.DeviceFingerprint == "" {
 		// If current request has fingerprint but session doesn't, this might be suspicious
 		s.logger.Warn("Device fingerprint provided but not stored in session",
 			zap.String("session_id", session.ID),

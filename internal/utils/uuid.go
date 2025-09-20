@@ -52,16 +52,3 @@ func GetNanoIDWithPrefix(prefix string) string {
 	result := getNanoIDWithSize(idLength)
 	return prefix + "-" + result
 }
-
-func GetNanoIDWithSizeAndPrefix(size int, prefix string) string {
-	result := getNanoIDWithSize(size)
-	return prefix + "-" + result
-}
-
-func GetUUIDWithPrefix(prefix string) string {
-	return prefix + "-" + uuid.New().String()
-}
-
-func GetUUID() string {
-	return uuid.New().String()
-}

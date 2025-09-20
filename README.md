@@ -2,6 +2,41 @@
 
 A production-ready Go web application boilerplate with enterprise-grade features including security, monitoring, database optimization, and scalable architecture.
 
+# Getting Started
+Developer quick start:
+
+### Prerequisites
+- Go 1.21+
+- PostgreSQL 13+
+- Redis 6+
+
+
+1. Start dependencies
+```bash
+docker-compose up -d postgres redis
+```
+
+2. **Configuration**:
+   ```bash
+   cp configs/config.example configs/config.yaml
+   # Edit config.yaml with your credentials
+   ```
+
+3. Run migrations
+```bash
+go run scripts/migration/migrate.go -dir up
+```
+
+4. Run the API
+```bash
+make run
+```
+
+5. Run With Live Reload
+```bash
+make dev
+```
+
 ## 🚀 Features
 
 ### Core Framework
@@ -78,8 +113,7 @@ internal/
 │   └── services/
 │       ├── cleanup_service.go
 │       ├── database_health_check_job.go
-│       ├── health_history.go
-│       └── report_service.go
+│       └── key_rotation.go
 └── shared/
     ├── cache/
     │   └── redis.go
@@ -124,39 +158,7 @@ tools/
 └── health_history_viewer.go
 ```
 
-## 🛠️ Quick Start
 
-### Prerequisites
-- Go 1.21+
-- PostgreSQL 13+
-- Redis 6+
-
-### Installation
-
-1. **Clone and setup**:
-   ```bash
-   git clone <repository-url>
-   cd go-boilerplate
-   go mod download
-   ```
-
-2. **Database setup**:
-   ```bash
-   go run scripts/migrate.go up
-   ```
-
-3. **Configuration**:
-   ```bash
-   cp configs/config.yaml configs/config.local.yaml
-   # Edit config.local.yaml with your credentials
-   ```
-
-4. **Run**:
-   ```bash
-   go run cmd/api/main.go
-   ```
-
-## ⚙️ Configuration
 
 ### Key Settings
 
@@ -185,13 +187,7 @@ rate_limiting:
   burst_size: 10
 ```
 
-### Environment Variables
-- `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`
-- `REDIS_HOST`, `REDIS_PORT`
-- `JWT_SECRET`
-- `APP_ENV`, `APP_PORT`
-
-## 🔒 Security Features
+## Security Features
 
 ### Security Headers
 - Content Security Policy (CSP)
@@ -210,7 +206,7 @@ rateLimiter.GinRateLimitWithOptions(middleware.RateLimitOptions{
 })
 ```
 
-## 🗄️ Database Features
+## Database Features
 
 ### Read/Write Splitting
 - Automatic routing: reads to replicas, writes to primary
@@ -222,7 +218,7 @@ rateLimiter.GinRateLimitWithOptions(middleware.RateLimitOptions{
 - Execution time tracking
 - Configurable thresholds
 
-## � Redis Features
+## Redis Features
 
 ### Single Node & Cluster Support
 - Automatic detection of Redis mode
@@ -236,7 +232,7 @@ redisClient.Set(ctx, "key", "value", time.Hour)
 result := redisClient.Get(ctx, "key")
 ```
 
-## 📊 Monitoring & Health Checks
+## Monitoring & Health Checks
 
 ### Health Endpoints
 - `GET /health` - Overall health status
@@ -248,29 +244,6 @@ result := redisClient.Get(ctx, "key")
 - Configurable log levels
 - File rotation and compression
 
-## 🧪 Testing
-
-```bash
-# Run all tests
-go test ./...
-
-# Run with coverage
-go test -cover ./...
-
-# Run integration tests
-go test -tags=integration ./...
-```
-
-## 🚀 Deployment
-
-### Docker
-```dockerfile
-FROM golang:1.21-alpine
-WORKDIR /app
-COPY . .
-RUN go build -o main cmd/api/main.go
-CMD ["./main"]
-```
 
 ### Production Checklist
 - [ ] Set `APP_ENV=production`

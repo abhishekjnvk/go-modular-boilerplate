@@ -4,14 +4,17 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 
 	"go-boilerplate/internal/pkg/auth"
 	"go-boilerplate/internal/shared/database"
+	"go-boilerplate/internal/shared/interfaces"
 	"go-boilerplate/internal/shared/logger"
 )
 
 // AuthRepository defines the interface for authentication operations
 type AuthRepository interface {
+	interfaces.Repository
 	FindUserByEmail(ctx context.Context, email string, vendorId string) (*auth.User, error)
 	FindUserByID(ctx context.Context, userID string) (*auth.User, error)
 	CreateUser(ctx context.Context, user *auth.User) error
@@ -106,8 +109,8 @@ func (r *PostgresAuthRepository) CreateUser(ctx context.Context, user *auth.User
 // CreateSession creates a new session
 func (r *PostgresAuthRepository) CreateSession(ctx context.Context, session *auth.Session) error {
 	query := `
-		INSERT INTO auth_session (id, user_id, refresh_token_hash, ip_address, device_name, device_fingerprint, is_active, trusted_device, created_at, valid_till, last_used, revoked_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		INSERT INTO auth_session (id, user_id, refresh_token_hash, ip_address, device_name, trust_score, city, country, region, timezone, isp, device_fingerprint, is_active, trusted_device, created_at, valid_till, last_used, revoked_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 	`
 
 	_, err := r.rwDB.WriteDB().ExecContext(
@@ -118,6 +121,12 @@ func (r *PostgresAuthRepository) CreateSession(ctx context.Context, session *aut
 		session.RefreshTokenHash,
 		session.IPAddress,
 		session.DeviceName,
+		session.TrustScore,
+		session.City,
+		session.Country,
+		session.Region,
+		session.Timezone,
+		session.ISP,
 		session.DeviceFingerprint,
 		session.IsActive,
 		session.TrustedDevice,
@@ -133,7 +142,7 @@ func (r *PostgresAuthRepository) CreateSession(ctx context.Context, session *aut
 // FindSessionByTokenHash finds a session by token hash
 func (r *PostgresAuthRepository) FindSessionByTokenHash(ctx context.Context, tokenHash string) (*auth.Session, error) {
 	query := `
-		SELECT id, user_id, refresh_token_hash, ip_address, device_name, device_fingerprint, is_active, trusted_device, created_at, valid_till, last_used, revoked_at
+		SELECT id, user_id, refresh_token_hash, ip_address, device_name, trust_score, city, country, country_code, region, region_code, latitude, longitude, timezone, isp, device_fingerprint, is_active, trusted_device, created_at, valid_till, last_used, revoked_at
 		FROM auth_session
 		WHERE refresh_token_hash = $1 AND is_active = true
 	`
@@ -153,7 +162,7 @@ func (r *PostgresAuthRepository) FindSessionByTokenHash(ctx context.Context, tok
 // FindSessionByID finds a session by ID
 func (r *PostgresAuthRepository) FindSessionByID(ctx context.Context, sessionID string) (*auth.Session, error) {
 	query := `
-		SELECT id, user_id, refresh_token_hash, ip_address, device_name, device_fingerprint, is_active, trusted_device, created_at, valid_till, last_used, revoked_at
+		SELECT id, user_id, refresh_token_hash, ip_address, device_name, trust_score, city, country, country_code, region, region_code, latitude, longitude, timezone, isp, device_fingerprint, is_active, trusted_device, created_at, valid_till, last_used, revoked_at
 		FROM auth_session
 		WHERE id = $1 AND is_active = true AND valid_till > CURRENT_TIMESTAMP
 	`
@@ -192,4 +201,23 @@ func (r *PostgresAuthRepository) RevokeSession(ctx context.Context, sessionID st
 
 	_, err := r.rwDB.WriteDB().ExecContext(ctx, query, sessionID)
 	return err
+}
+
+// Health performs health check for the auth repository
+func (r *PostgresAuthRepository) Health(ctx context.Context) error {
+	if r.rwDB == nil {
+		return fmt.Errorf("database connection is nil")
+	}
+
+	// Test read database connection
+	if err := r.rwDB.ReadDB().PingContext(ctx); err != nil {
+		return fmt.Errorf("read database health check failed: %w", err)
+	}
+
+	// Test write database connection
+	if err := r.rwDB.WriteDB().PingContext(ctx); err != nil {
+		return fmt.Errorf("write database health check failed: %w", err)
+	}
+
+	return nil
 }

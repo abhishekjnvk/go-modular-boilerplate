@@ -49,7 +49,7 @@ func (m *RequestIDMiddleware) Middleware() gin.HandlerFunc {
 		c.Set("request_id", requestID)
 
 		// Add request ID to context for use in handlers
-		ctx := context.WithValue(c.Request.Context(), "request_id", requestID)
+		ctx := context.WithValue(c.Request.Context(), RequestIDKey, requestID)
 		c.Request = c.Request.WithContext(ctx)
 
 		// Log request start
@@ -90,7 +90,7 @@ func (m *RequestIDMiddleware) Handler(next http.Handler) http.Handler {
 
 		// Set request ID in header and context
 		w.Header().Set(RequestIDHeader, requestID)
-		ctx := context.WithValue(r.Context(), "request_id", requestID)
+		ctx := context.WithValue(r.Context(), RequestIDKey, requestID)
 		r = r.WithContext(ctx)
 
 		// Log request start
@@ -103,7 +103,7 @@ func (m *RequestIDMiddleware) Handler(next http.Handler) http.Handler {
 		)
 
 		// Store start time in context
-		ctx = context.WithValue(ctx, "start_time", time.Now())
+		ctx = context.WithValue(ctx, StartTimeKey, time.Now())
 		r = r.WithContext(ctx)
 
 		next.ServeHTTP(w, r)

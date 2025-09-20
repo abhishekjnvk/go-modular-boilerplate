@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/robfig/cron/v3"
+	cron "github.com/robfig/cron/v3"
 	"go.uber.org/zap"
 
 	services "go-boilerplate/internal/scheduler/services"

@@ -5,11 +5,13 @@ import (
 
 	"go-boilerplate/internal/pkg/user"
 	userRepository "go-boilerplate/internal/pkg/user/repository"
+	"go-boilerplate/internal/shared/interfaces"
 	"go-boilerplate/internal/shared/logger"
 )
 
 // UserService defines the interface for user service operations
 type UserService interface {
+	interfaces.Service
 	GetProfile(ctx context.Context, userID string) (*user.Profile, error)
 	UpdateProfile(ctx context.Context, userID string, req *user.UpdateProfileRequest) (*user.Profile, error)
 }

@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/robfig/cron/v3"
+	cron "github.com/robfig/cron/v3"
 	"go.uber.org/zap"
 
 	"go-boilerplate/internal/app/config"
@@ -44,9 +44,6 @@ func main() {
 	}
 	defer rwDB.Close()
 
-	// Start database health monitoring
-	ctx := context.Background()
-
 	// Initialize Redis connection
 	redisConfig := cache.DefaultConfig(cfg)
 	redisClient, err := cache.New(redisConfig, appLogger)
@@ -81,8 +78,8 @@ func main() {
 	appLogger.Info("Worker is shutting down...")
 
 	// Stop the cron scheduler
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer shutdownCancel()
 
 	// Create a channel to signal when the scheduler has stopped
 	stopCh := make(chan struct{})
@@ -95,7 +92,7 @@ func main() {
 	select {
 	case <-stopCh:
 		appLogger.Info("Cron scheduler stopped gracefully")
-	case <-ctx.Done():
+	case <-shutdownCtx.Done():
 		appLogger.Warn("Cron scheduler shutdown timed out")
 	}
 

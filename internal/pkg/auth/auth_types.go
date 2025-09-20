@@ -3,7 +3,7 @@ package auth
 import (
 	"time"
 
-	"github.com/go-playground/validator/v10"
+	validator "github.com/go-playground/validator/v10"
 )
 
 // User represents a user in the authentication system
@@ -29,8 +29,14 @@ type Session struct {
 	UserID            string     `json:"user_id" db:"user_id"`
 	RefreshTokenHash  string     `json:"-" db:"refresh_token_hash"` // Token hash, not returned in JSON
 	IPAddress         string     `json:"ip_address" db:"ip_address"`
-	DeviceName        *string    `json:"device_name" db:"device_name"`
-	DeviceFingerprint *string    `json:"device_fingerprint" db:"device_fingerprint"`
+	DeviceName        string     `json:"device_name" db:"device_name"`
+	TrustScore        int        `json:"trust_score" db:"trust_score"`
+	City              string     `json:"city" db:"city"`
+	Country           string     `json:"country" db:"country"`
+	Region            string     `json:"region" db:"region"`
+	Timezone          string     `json:"timezone" db:"timezone"`
+	ISP               string     `json:"isp" db:"isp"`
+	DeviceFingerprint string     `json:"device_fingerprint" db:"device_fingerprint"`
 	IsActive          bool       `json:"is_active" db:"is_active"`
 	TrustedDevice     bool       `json:"trusted_device" db:"trusted_device"`
 	CreatedAt         time.Time  `json:"created_at" db:"created_at"`
@@ -39,10 +45,16 @@ type Session struct {
 	RevokedAt         *time.Time `json:"revoked_at" db:"revoked_at"`
 }
 
-// DeviceInfo represents device information for session tracking
+// DeviceInfo represents simplified device information for session tracking
 type DeviceInfo struct {
-	Name        *string
-	Fingerprint *string
+	Name        string `json:"device_name"` // Format: "Browser (OS) - OS_Version"
+	Fingerprint string `json:"device_fingerprint"`
+	TrustScore  int    `json:"trust_score"` // Risk score from 0-100
+	City        string `json:"city,omitempty"`
+	Country     string `json:"country,omitempty"`
+	Region      string `json:"region,omitempty"`
+	ISP         string `json:"isp,omitempty"`
+	Timezone    string `json:"timezone,omitempty"`
 }
 
 // LoginRequest represents the login request payload

@@ -11,11 +11,6 @@ import (
 	"go-boilerplate/internal/shared/utils"
 )
 
-// Key for storing user ID in request context
-type contextKey string
-
-const UserIDKey contextKey = "user_id"
-
 // AuthMiddleware provides JWT authentication functionality
 type AuthMiddleware struct {
 	logger          *logger.Logger
