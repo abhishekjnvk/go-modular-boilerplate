@@ -8,7 +8,7 @@ import (
 	"go.uber.org/zap"
 
 	"go-boilerplate/internal/app/config"
-	"go-boilerplate/internal/shared"
+	jwkKeyManager "go-boilerplate/internal/shared/jwk"
 	"go-boilerplate/internal/shared/logger"
 )
 
@@ -60,7 +60,7 @@ func (j *JWKKeyRotationJob) Run(ctx context.Context) error {
 
 // RotateKey rotates the JSON Web Key (JWKS) used for signing tokens
 func (j *JWKKeyRotationJob) RotateKey(ctx context.Context) error {
-	keyManager := shared.NewJWKKeyManager(j.logger.Logger)
+	keyManager := jwkKeyManager.NewJWKKeyManager(j.logger.Logger)
 
 	// Rotate key
 	if err := keyManager.RotateKey(); err != nil {

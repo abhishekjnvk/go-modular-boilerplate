@@ -1,4 +1,4 @@
-package shared
+package jwkKeyManager
 
 import (
 	"crypto/rand"

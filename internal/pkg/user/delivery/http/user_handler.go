@@ -2,7 +2,6 @@ package userHttp
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -15,123 +14,67 @@ import (
 
 // UserHandler handles HTTP requests for user operations
 type UserHandler struct {
-	service userService.UserService
-	logger  *logger.Logger
+	service         userService.UserService
+	logger          *logger.Logger
+	responseHandler *utils.ResponseHandler
 }
 
 // NewUserHandler creates a new user handler
 func NewUserHandler(svc userService.UserService, log *logger.Logger) *UserHandler {
 	return &UserHandler{
-		service: svc,
-		logger:  log.Named("user-handler"),
+		service:         svc,
+		logger:          log.Named("user-handler"),
+		responseHandler: utils.NewResponseHandler(log.Named("user-responses")),
 	}
 }
 
 // GetProfile handles the get profile request
 func (h *UserHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-
 	// Get user ID from context (set by auth middleware)
 	userID, ok := middleware.GetUserID(r)
 	if !ok {
-		utils.RespondWithError(
-			w, r, start,
-			"Unauthorized",
-			nil,
-			http.StatusUnauthorized,
-			h.logger,
-		)
+		h.responseHandler.Unauthorized(w, r.Context(), "Unauthorized")
 		return
 	}
 
 	// Call service
 	profile, err := h.service.GetProfile(r.Context(), userID)
 	if err != nil {
-		statusCode := http.StatusInternalServerError
-
-		if err == user.ErrUserNotFound {
-			statusCode = http.StatusNotFound
-		}
-
-		utils.RespondWithError(
-			w, r, start,
-			err.Error(),
-			err,
-			statusCode,
-			h.logger,
-		)
+		utils.HandleServiceError(w, r.Context(), err, h.responseHandler)
 		return
 	}
 
-	utils.RespondWithSuccess(
-		w, r, start,
-		"Profile retrieved successfully",
-		user.ProfileResponse{
-			User: *profile,
-		},
-		nil,
-		http.StatusOK,
-	)
+	h.responseHandler.Success(w, r.Context(),
+		user.ProfileResponse{User: *profile},
+		"Profile retrieved successfully")
 }
 
 // UpdateProfile handles the update profile request
 func (h *UserHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-
 	// Get user ID from context (set by auth middleware)
 	userID, ok := middleware.GetUserID(r)
 	if !ok {
-		utils.RespondWithError(
-			w, r, start,
-			"Unauthorized",
-			nil,
-			http.StatusUnauthorized,
-			h.logger,
-		)
+		h.responseHandler.Unauthorized(w, r.Context(), "Unauthorized")
 		return
 	}
 
 	// Parse request
 	var req user.UpdateProfileRequest
 	if err := utils.DecodeJSON(r, &req); err != nil {
-		utils.RespondWithError(
-			w, r, start,
-			"Invalid request payload",
-			err,
-			http.StatusBadRequest,
-			h.logger,
-		)
+		h.responseHandler.BadRequest(w, r.Context(), "Invalid request payload")
 		return
 	}
 
 	// Call service
 	profile, err := h.service.UpdateProfile(r.Context(), userID, &req)
 	if err != nil {
-		statusCode := http.StatusInternalServerError
-
-		if err == user.ErrUserNotFound {
-			statusCode = http.StatusNotFound
-		}
-
-		utils.RespondWithError(
-			w, r, start,
-			err.Error(),
-			err,
-			statusCode,
-			h.logger,
-		)
+		utils.HandleServiceError(w, r.Context(), err, h.responseHandler)
 		return
 	}
 
-	utils.RespondWithSuccess(
-		w, r, start,
-		"Profile updated successfully",
-		user.ProfileResponse{
-			User: *profile,
-		},
-		nil,
-		http.StatusOK,
-	)
+	h.responseHandler.Success(w, r.Context(),
+		user.ProfileResponse{User: *profile},
+		"Profile updated successfully")
 }
 
 // GinGetProfile provides Gin-compatible get profile endpoint
@@ -139,29 +82,20 @@ func (h *UserHandler) GinGetProfile(c *gin.Context) {
 	// Get user ID from context (set by auth middleware)
 	userID, ok := middleware.GetUserIDFromGin(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		h.responseHandler.GinUnauthorized(c, "Unauthorized")
 		return
 	}
 
 	// Call service
 	profile, err := h.service.GetProfile(c.Request.Context(), userID)
 	if err != nil {
-		statusCode := http.StatusInternalServerError
-
-		if err == user.ErrUserNotFound {
-			statusCode = http.StatusNotFound
-		}
-
-		c.JSON(statusCode, gin.H{"error": err.Error()})
+		utils.GinHandleServiceError(c, err, h.responseHandler)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Profile retrieved successfully",
-		"data": user.ProfileResponse{
-			User: *profile,
-		},
-	})
+	h.responseHandler.GinSuccess(c,
+		user.ProfileResponse{User: *profile},
+		"Profile retrieved successfully")
 }
 
 // GinUpdateProfile provides Gin-compatible update profile endpoint
@@ -169,34 +103,25 @@ func (h *UserHandler) GinUpdateProfile(c *gin.Context) {
 	// Get user ID from context (set by auth middleware)
 	userID, ok := middleware.GetUserIDFromGin(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		h.responseHandler.GinUnauthorized(c, "Unauthorized")
 		return
 	}
 
 	// Parse request
 	var req user.UpdateProfileRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload"})
+		h.responseHandler.GinBadRequest(c, "Invalid request payload")
 		return
 	}
 
 	// Call service
 	profile, err := h.service.UpdateProfile(c.Request.Context(), userID, &req)
 	if err != nil {
-		statusCode := http.StatusInternalServerError
-
-		if err == user.ErrUserNotFound {
-			statusCode = http.StatusNotFound
-		}
-
-		c.JSON(statusCode, gin.H{"error": err.Error()})
+		utils.GinHandleServiceError(c, err, h.responseHandler)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Profile updated successfully",
-		"data": user.ProfileResponse{
-			User: *profile,
-		},
-	})
+	h.responseHandler.GinSuccess(c,
+		user.ProfileResponse{User: *profile},
+		"Profile updated successfully")
 }

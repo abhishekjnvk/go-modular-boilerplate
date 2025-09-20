@@ -6,7 +6,6 @@ import (
 	"net"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -15,6 +14,22 @@ import (
 	"go-boilerplate/internal/shared/logger"
 	"go-boilerplate/internal/shared/utils"
 )
+
+// AuthHandler handles HTTP requests for authentication operations
+type AuthHandler struct {
+	service         authService.AuthService
+	logger          *logger.Logger
+	responseHandler *utils.ResponseHandler
+}
+
+// NewAuthHandler creates a new authentication handler
+func NewAuthHandler(svc authService.AuthService, log *logger.Logger) *AuthHandler {
+	return &AuthHandler{
+		service:         svc,
+		logger:          log.Named("auth-handler"),
+		responseHandler: utils.NewResponseHandler(log.Named("auth-responses")),
+	}
+}
 
 // getClientIP extracts the client IP address from the request
 func getClientIP(r *http.Request) string {
@@ -69,34 +84,12 @@ func getDeviceInfo(r *http.Request) *auth.DeviceInfo {
 	}
 }
 
-// AuthHandler handles HTTP requests for authentication
-type AuthHandler struct {
-	service authService.AuthService
-	logger  *logger.Logger
-}
-
-// NewAuthHandler creates a new authentication handler
-func NewAuthHandler(svc authService.AuthService, log *logger.Logger) *AuthHandler {
-	return &AuthHandler{
-		service: svc,
-		logger:  log.Named("auth-handler"),
-	}
-}
-
 // Login handles the login request
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-
 	// Parse request
 	var req auth.LoginRequest
 	if err := utils.DecodeJSON(r, &req); err != nil {
-		utils.RespondWithError(
-			w, r, start,
-			"Invalid request payload",
-			err,
-			http.StatusBadRequest,
-			h.logger,
-		)
+		h.responseHandler.BadRequest(w, r.Context(), "Invalid request payload")
 		return
 	}
 
@@ -107,45 +100,19 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	// Call service
 	resp, err := h.service.Login(r.Context(), &req, ipAddress, deviceInfo)
 	if err != nil {
-		statusCode := http.StatusInternalServerError
-
-		if err == auth.ErrInvalidCredentials {
-			statusCode = http.StatusUnauthorized
-		}
-
-		utils.RespondWithError(
-			w, r, start,
-			err.Error(),
-			err,
-			statusCode,
-			h.logger,
-		)
+		utils.HandleServiceError(w, r.Context(), err, h.responseHandler)
 		return
 	}
 
-	utils.RespondWithSuccess(
-		w, r, start,
-		"Login successful",
-		resp,
-		nil,
-		http.StatusOK,
-	)
+	h.responseHandler.Success(w, r.Context(), resp, "Login successful")
 }
 
 // Register handles the registration request
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-
 	// Parse request
 	var req auth.RegisterRequest
 	if err := utils.DecodeJSON(r, &req); err != nil {
-		utils.RespondWithError(
-			w, r, start,
-			"Invalid request payload",
-			err,
-			http.StatusBadRequest,
-			h.logger,
-		)
+		h.responseHandler.BadRequest(w, r.Context(), "Invalid request payload")
 		return
 	}
 
@@ -156,29 +123,11 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	// Call service
 	user, err := h.service.Register(r.Context(), &req, ipAddress, deviceInfo)
 	if err != nil {
-		statusCode := http.StatusInternalServerError
-
-		if err == auth.ErrUserAlreadyExists {
-			statusCode = http.StatusConflict
-		}
-
-		utils.RespondWithError(
-			w, r, start,
-			err.Error(),
-			err,
-			statusCode,
-			h.logger,
-		)
+		utils.HandleServiceError(w, r.Context(), err, h.responseHandler)
 		return
 	}
 
-	utils.RespondWithSuccess(
-		w, r, start,
-		"Registration successful",
-		user,
-		nil,
-		http.StatusCreated,
-	)
+	h.responseHandler.Created(w, r.Context(), user, "Registration successful")
 }
 
 // GinLogin provides Gin-compatible login endpoint
@@ -186,7 +135,7 @@ func (h *AuthHandler) GinLogin(c *gin.Context) {
 	// Parse request
 	var req auth.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload"})
+		h.responseHandler.GinBadRequest(c, "Invalid request payload")
 		return
 	}
 
@@ -215,20 +164,11 @@ func (h *AuthHandler) GinLogin(c *gin.Context) {
 	// Call service
 	resp, err := h.service.Login(c.Request.Context(), &req, ipAddress, deviceInfo)
 	if err != nil {
-		statusCode := http.StatusInternalServerError
-
-		if err == auth.ErrInvalidCredentials {
-			statusCode = http.StatusUnauthorized
-		}
-
-		c.JSON(statusCode, gin.H{"error": err.Error()})
+		utils.GinHandleServiceError(c, err, h.responseHandler)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Login successful",
-		"data":    resp,
-	})
+	h.responseHandler.GinSuccess(c, resp, "Login successful")
 }
 
 // GinRegister provides Gin-compatible registration endpoint
@@ -236,7 +176,7 @@ func (h *AuthHandler) GinRegister(c *gin.Context) {
 	// Parse request
 	var req auth.RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload"})
+		h.responseHandler.GinBadRequest(c, "Invalid request payload")
 		return
 	}
 
@@ -265,54 +205,161 @@ func (h *AuthHandler) GinRegister(c *gin.Context) {
 	// Call service
 	user, err := h.service.Register(c.Request.Context(), &req, ipAddress, deviceInfo)
 	if err != nil {
-		statusCode := http.StatusInternalServerError
-
-		if err == auth.ErrUserAlreadyExists {
-			statusCode = http.StatusConflict
-		}
-
-		c.JSON(statusCode, gin.H{"error": err.Error()})
+		utils.GinHandleServiceError(c, err, h.responseHandler)
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{
-		"message": "Registration successful",
-		"data":    user,
-	})
+	h.responseHandler.GinSuccess(c, user, "Registration successful")
+}
+
+// RefreshToken handles the refresh token request
+func (h *AuthHandler) RefreshToken(w http.ResponseWriter, r *http.Request) {
+	// Parse request
+	var req auth.RefreshTokenRequest
+	if err := utils.DecodeJSON(r, &req); err != nil {
+		h.responseHandler.BadRequest(w, r.Context(), "Invalid request payload")
+		return
+	}
+
+	// Get client IP and device info
+	ipAddress := getClientIP(r)
+	deviceInfo := getDeviceInfo(r)
+
+	// Call service
+	resp, err := h.service.RefreshToken(r.Context(), &req, ipAddress, deviceInfo)
+	if err != nil {
+		utils.HandleServiceError(w, r.Context(), err, h.responseHandler)
+		return
+	}
+
+	h.responseHandler.Success(w, r.Context(), resp, "Token refreshed successfully")
+}
+
+// GinRefreshToken provides Gin-compatible refresh token endpoint
+func (h *AuthHandler) GinRefreshToken(c *gin.Context) {
+	var req auth.RefreshTokenRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.responseHandler.GinBadRequest(c, "Invalid request payload")
+		return
+	}
+
+	// Get client IP and device info
+	ipAddress := c.ClientIP()
+	userAgent := c.Request.UserAgent()
+	deviceInfo := &auth.DeviceInfo{
+		Name:        &userAgent,
+		Fingerprint: nil, // Could be implemented based on device fingerprinting
+	}
+
+	// Call service
+	resp, err := h.service.RefreshToken(c.Request.Context(), &req, ipAddress, deviceInfo)
+	if err != nil {
+		utils.GinHandleServiceError(c, err, h.responseHandler)
+		return
+	}
+
+	h.responseHandler.GinSuccess(c, resp, "Token refreshed successfully")
 }
 
 // JWKKey returns the JSON Web Key Set
 func (h *AuthHandler) JWKKey(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-
 	jwks, err := h.service.GetJWKS()
 	if err != nil {
-		utils.RespondWithError(
-			w, r, start,
-			"Failed to get JWK",
-			err,
-			http.StatusInternalServerError,
-			h.logger,
-		)
+		h.responseHandler.InternalError(w, r.Context(), err)
 		return
 	}
 
-	utils.RespondWithSuccess(
-		w, r, start,
-		"JWK retrieved successfully",
-		jwks,
-		nil,
-		http.StatusOK,
-	)
+	h.responseHandler.Success(w, r.Context(), jwks, "JWK retrieved successfully")
 }
 
 // GinJWKKey provides Gin-compatible JWK endpoint
 func (h *AuthHandler) GinJWKKey(c *gin.Context) {
 	jwks, err := h.service.GetJWKS()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get JWK"})
+		h.responseHandler.GinInternalError(c, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, jwks)
+	h.responseHandler.GinSuccess(c, jwks, "JWK retrieved successfully")
+}
+
+// GinVerifyEmail provides Gin-compatible email verification endpoint
+func (h *AuthHandler) GinVerifyEmail(c *gin.Context) {
+	var req auth.VerifyEmailRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.responseHandler.GinBadRequest(c, "Invalid request payload")
+		return
+	}
+
+	resp, err := h.service.VerifyEmail(c.Request.Context(), &req)
+	if err != nil {
+		utils.GinHandleServiceError(c, err, h.responseHandler)
+		return
+	}
+
+	h.responseHandler.GinSuccess(c, resp, "Email verified successfully")
+}
+
+// GinRequestPasswordReset provides Gin-compatible password reset request endpoint
+func (h *AuthHandler) GinRequestPasswordReset(c *gin.Context) {
+	var req auth.RequestPasswordResetRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.responseHandler.GinBadRequest(c, "Invalid request payload")
+		return
+	}
+
+	resp, err := h.service.RequestPasswordReset(c.Request.Context(), &req)
+	if err != nil {
+		utils.GinHandleServiceError(c, err, h.responseHandler)
+		return
+	}
+
+	h.responseHandler.GinSuccess(c, resp, "Password reset email sent successfully")
+}
+
+// GinResetPassword provides Gin-compatible password reset endpoint
+func (h *AuthHandler) GinResetPassword(c *gin.Context) {
+	var req auth.ResetPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.responseHandler.GinBadRequest(c, "Invalid request payload")
+		return
+	}
+
+	resp, err := h.service.ResetPassword(c.Request.Context(), &req)
+	if err != nil {
+		utils.GinHandleServiceError(c, err, h.responseHandler)
+		return
+	}
+
+	h.responseHandler.GinSuccess(c, resp, "Password reset successfully")
+}
+
+// GinChangePassword provides Gin-compatible change password endpoint
+func (h *AuthHandler) GinChangePassword(c *gin.Context) {
+	var req auth.ChangePasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.responseHandler.GinBadRequest(c, "Invalid request payload")
+		return
+	}
+
+	// Get user ID from context (set by auth middleware)
+	userID, exists := c.Get("user_id")
+	if !exists {
+		h.responseHandler.GinUnauthorized(c, "User not authenticated")
+		return
+	}
+
+	userIDStr, ok := userID.(string)
+	if !ok {
+		h.responseHandler.GinInternalError(c, fmt.Errorf("invalid user ID type"))
+		return
+	}
+
+	resp, err := h.service.ChangePassword(c.Request.Context(), userIDStr, &req)
+	if err != nil {
+		utils.GinHandleServiceError(c, err, h.responseHandler)
+		return
+	}
+
+	h.responseHandler.GinSuccess(c, resp, "Password changed successfully")
 }

@@ -37,8 +37,8 @@ type ServerOptions struct {
 	RecoveryMiddleware  *customMiddleware.RecoveryMiddleware
 	SecurityMiddleware  *customMiddleware.SecurityMiddleware
 	RateLimitMiddleware *customMiddleware.RateLimitMiddleware
-	// HealthRateLimitMiddleware *customMiddleware.RateLimitMiddleware
-	Metrics *metrics.Metrics
+	RequestIDMiddleware *customMiddleware.RequestIDMiddleware
+	Metrics             *metrics.Metrics
 }
 
 // NewServer creates a new HTTP server
@@ -50,14 +50,12 @@ func NewServer(opts *ServerOptions) *Server {
 		gin.SetMode(gin.DebugMode)
 	}
 
-	gin.SetMode(gin.TestMode)
 	r := gin.New()
 
-	// Add built-in middleware
-	r.Use(gin.Logger())
-	r.Use(gin.Recovery())
-
 	// Add custom middleware
+	if opts.RequestIDMiddleware != nil {
+		r.Use(opts.RequestIDMiddleware.Middleware())
+	}
 	r.Use(opts.LoggingMiddleware.GinLogRequest)
 	r.Use(opts.RecoveryMiddleware.GinRecover)
 	r.Use(opts.SecurityMiddleware.GinSecurityHeaders)
@@ -98,7 +96,7 @@ func setupRoutes(r *gin.Engine, opts *ServerOptions) {
 	apiV1 := r.Group("/api/v1")
 	{
 		// Register auth routes
-		opts.AuthHandler.RegisterGinRoutes(apiV1, opts.AuthMiddleware)
+		opts.AuthHandler.RegisterGinRoutes(apiV1, opts.AuthMiddleware, opts.RateLimitMiddleware)
 
 		// Register user routes
 		opts.UserHandler.RegisterGinRoutes(apiV1, opts.AuthMiddleware)

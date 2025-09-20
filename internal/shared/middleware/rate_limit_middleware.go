@@ -15,6 +15,7 @@ import (
 
 	"go-boilerplate/internal/shared/cache"
 	"go-boilerplate/internal/shared/logger"
+	"go-boilerplate/internal/shared/utils"
 )
 
 // RateLimitConfig holds the configuration for rate limiting
@@ -458,11 +459,18 @@ func (m *RateLimitMiddleware) createKey(clientIP, path string) string {
 
 // handleRateLimitExceeded handles requests that exceed the rate limit
 func (m *RateLimitMiddleware) handleRateLimitExceeded(c *gin.Context, clientIP string, count, limit int) {
+	requestID := c.GetString("request_id")
+	sessionID := c.GetString("session_id")
+
 	m.logger.Warn("Rate limit exceeded",
 		zap.String("client_ip", clientIP),
 		zap.String("path", c.Request.URL.Path),
+		zap.String("request_id", requestID),
+		zap.String("session_id", sessionID),
 		zap.Int("count", count),
-		zap.Int("limit", limit))
+		zap.Int("limit", limit),
+		zap.String("user_agent", c.Request.UserAgent()),
+	)
 
 	// Add rate limit headers
 	c.Header("X-RateLimit-Limit", strconv.Itoa(limit))
@@ -470,12 +478,17 @@ func (m *RateLimitMiddleware) handleRateLimitExceeded(c *gin.Context, clientIP s
 	c.Header("X-RateLimit-Reset", strconv.FormatInt(time.Now().Add(m.config.Window).Unix(), 10))
 	c.Header("Retry-After", strconv.Itoa(int(m.config.Window.Seconds())))
 
-	// Return 429 Too Many Requests
-	c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
-		"error":       "Too Many Requests",
-		"message":     "Rate limit exceeded. Please try again later.",
-		"retry_after": int(m.config.Window.Seconds()),
-	})
+	// Create response context for standardized response
+	responseCtx := utils.NewResponseContext(requestID, sessionID)
+
+	// Return 429 Too Many Requests with standardized format
+	utils.RespondWithStandardFormat(
+		c.Writer, c.Request.Context(),
+		http.StatusTooManyRequests, false, nil,
+		"Rate limit exceeded. Please try again later.",
+		responseCtx,
+	)
+	c.Abort()
 }
 
 // addRateLimitHeaders adds rate limit information to response headers
@@ -525,6 +538,45 @@ func DefaultRateLimitConfig() *RateLimitConfig {
 		// SkipPaths:              []string{"/health", "/ready", "/metrics"},
 		TrustedProxies: []string{},
 		BurstSize:      10,
+	}
+}
+
+// AuthRateLimitConfig returns a strict rate limiting configuration for authentication endpoints
+func AuthRateLimitConfig() *RateLimitConfig {
+	return &RateLimitConfig{
+		MaxAttempts:            5,               // Only 5 attempts per minute for auth endpoints
+		Window:                 1 * time.Minute, // Per minute window
+		KeyPrefix:              "auth_rate_limit",
+		SkipSuccessfulRequests: false,
+		SkipPaths:              []string{}, // No paths skipped for auth
+		TrustedProxies:         []string{},
+		BurstSize:              2, // Small burst allowance
+	}
+}
+
+// LoginRateLimitConfig returns rate limiting configuration specifically for login endpoints
+func LoginRateLimitConfig() *RateLimitConfig {
+	return &RateLimitConfig{
+		MaxAttempts:            3,               // Only 3 login attempts per 5 minutes
+		Window:                 5 * time.Minute, // 5 minute window
+		KeyPrefix:              "login_rate_limit",
+		SkipSuccessfulRequests: true, // Don't count successful logins
+		SkipPaths:              []string{},
+		TrustedProxies:         []string{},
+		BurstSize:              1, // Minimal burst
+	}
+}
+
+// RefreshTokenRateLimitConfig returns rate limiting configuration for token refresh endpoints
+func RefreshTokenRateLimitConfig() *RateLimitConfig {
+	return &RateLimitConfig{
+		MaxAttempts:            10,              // 10 refresh attempts per minute
+		Window:                 1 * time.Minute, // Per minute window
+		KeyPrefix:              "refresh_rate_limit",
+		SkipSuccessfulRequests: false,
+		SkipPaths:              []string{},
+		TrustedProxies:         []string{},
+		BurstSize:              3, // Small burst allowance
 	}
 }
 

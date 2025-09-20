@@ -53,6 +53,22 @@ func (m *LoggingMiddleware) LogRequest(next http.Handler) http.Handler {
 		// Generate or extract session ID
 		sessionID := getOrGenerateSessionID(r)
 
+		// Set session ID cookie if it doesn't exist
+		if cookie, err := r.Cookie("session_id"); err != nil || cookie == nil || cookie.Value == "" {
+			http.SetCookie(w, &http.Cookie{
+				Name:     "session_id",
+				Value:    sessionID,
+				Path:     "/",
+				MaxAge:   86400 * 30, // 30 days
+				HttpOnly: true,
+				Secure:   false, // Set to true in production with HTTPS
+			})
+		}
+
+		// Set session ID in context for downstream handlers
+		ctx := context.WithValue(r.Context(), "session_id", sessionID)
+		r = r.WithContext(ctx)
+
 		// Log the request
 		m.logger.Info(
 			"Request started",
@@ -65,7 +81,7 @@ func (m *LoggingMiddleware) LogRequest(next http.Handler) http.Handler {
 		)
 
 		// Store the request start time in the request context
-		ctx := contextWithStartTime(r.Context(), start)
+		ctx = contextWithStartTime(ctx, start)
 
 		// Call the next handler
 		next.ServeHTTP(rwCapture, r.WithContext(ctx))
@@ -106,6 +122,16 @@ func (m *LoggingMiddleware) GinLogRequest(c *gin.Context) {
 
 	// Generate or extract session ID
 	sessionID := getOrGenerateSessionIDGin(c)
+
+	// Set session ID cookie if it doesn't exist
+	if cookie, err := c.Cookie("session_id"); err != nil || cookie == "" {
+		c.SetCookie("session_id", sessionID, 86400*30, "/", "", false, true) // 30 days, httpOnly
+	}
+
+	// Set session ID in Gin context and request context
+	c.Set("session_id", sessionID)
+	ctx := context.WithValue(c.Request.Context(), "session_id", sessionID)
+	c.Request = c.Request.WithContext(ctx)
 
 	// Log the request
 	m.logger.Info(

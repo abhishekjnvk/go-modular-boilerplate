@@ -4,12 +4,9 @@ import (
 	"context"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
 
-	"go-boilerplate/internal/shared"
 	"go-boilerplate/internal/shared/logger"
 	"go-boilerplate/internal/shared/utils"
 )
@@ -21,30 +18,35 @@ const UserIDKey contextKey = "user_id"
 
 // AuthMiddleware provides JWT authentication functionality
 type AuthMiddleware struct {
-	keyManager *shared.JWKKeyManager
-	logger     *logger.Logger
+	logger          *logger.Logger
+	responseHandler *utils.ResponseHandler
+	jwtUtils        *utils.JWTUtils
 }
 
 // NewAuthMiddleware creates a new authentication middleware
-func NewAuthMiddleware(keyManager *shared.JWKKeyManager, log *logger.Logger) (*AuthMiddleware, error) {
+func NewAuthMiddleware(log *logger.Logger) (*AuthMiddleware, error) {
+	jwtUtils := utils.NewJWTUtils()
+
 	return &AuthMiddleware{
-		keyManager: keyManager,
-		logger:     log.Named("auth-middleware"),
+		logger:          log.Named("auth-middleware"),
+		responseHandler: utils.NewResponseHandler(log.Named("auth-middleware-responses")),
+		jwtUtils:        jwtUtils,
 	}, nil
 }
 
 // Authenticate validates JWT tokens from the Authorization header
 func (m *AuthMiddleware) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-
 		// Extract token from Authorization header
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
+			requestID := utils.GetRequestIDFromContext(r.Context())
+			sessionID := utils.GetSessionIDFromContext(r.Context())
+			responseCtx := utils.NewResponseContext(requestID, sessionID)
+
 			utils.RespondWithError(
-				w, r, start,
+				w, r.Context(), responseCtx,
 				"Authentication required",
-				nil,
 				http.StatusUnauthorized,
 				m.logger,
 			)
@@ -54,10 +56,13 @@ func (m *AuthMiddleware) Authenticate(next http.Handler) http.Handler {
 		// Check if the Authorization header has the right format
 		bearerToken := strings.Split(authHeader, " ")
 		if len(bearerToken) != 2 || bearerToken[0] != "Bearer" {
+			requestID := utils.GetRequestIDFromContext(r.Context())
+			sessionID := utils.GetSessionIDFromContext(r.Context())
+			responseCtx := utils.NewResponseContext(requestID, sessionID)
+
 			utils.RespondWithError(
-				w, r, start,
+				w, r.Context(), responseCtx,
 				"Invalid authorization format, expected 'Bearer {token}'",
-				nil,
 				http.StatusUnauthorized,
 				m.logger,
 			)
@@ -66,60 +71,31 @@ func (m *AuthMiddleware) Authenticate(next http.Handler) http.Handler {
 
 		// Parse the token
 		tokenStr := bearerToken[1]
-		validKeys := m.keyManager.GetValidKeys()
-		var lastErr error
-		var validToken *jwt.Token
+		validToken, err := m.jwtUtils.DecryptClaims(tokenStr)
 
-		for _, key := range validKeys {
-			token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
-				// Validate signing algorithm
-				if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
-					return nil, utils.NewHTTPError(
-						http.StatusUnauthorized,
-						"Invalid token signing method",
-						nil,
-					)
-				}
-				return key.PublicKey, nil
-			})
+		if validToken == nil || err != nil {
+			requestID := utils.GetRequestIDFromContext(r.Context())
+			sessionID := utils.GetSessionIDFromContext(r.Context())
+			responseCtx := utils.NewResponseContext(requestID, sessionID)
 
-			if err == nil && token.Valid {
-				validToken = token
-				break
-			}
-			lastErr = err
-		}
-
-		if validToken == nil {
 			utils.RespondWithError(
-				w, r, start,
+				w, r.Context(), responseCtx,
 				"Invalid or expired token",
-				lastErr,
 				http.StatusUnauthorized,
 				m.logger,
 			)
 			return
 		}
 
-		// Extract user ID from token claims
-		claims, ok := validToken.Claims.(jwt.MapClaims)
+		userID, ok := validToken["user_id"].(string)
 		if !ok {
-			utils.RespondWithError(
-				w, r, start,
-				"Invalid token claims",
-				nil,
-				http.StatusUnauthorized,
-				m.logger,
-			)
-			return
-		}
+			requestID := utils.GetRequestIDFromContext(r.Context())
+			sessionID := utils.GetSessionIDFromContext(r.Context())
+			responseCtx := utils.NewResponseContext(requestID, sessionID)
 
-		userID, ok := claims["user_id"].(string)
-		if !ok {
 			utils.RespondWithError(
-				w, r, start,
+				w, r.Context(), responseCtx,
 				"Invalid user ID in token",
-				nil,
 				http.StatusUnauthorized,
 				m.logger,
 			)
@@ -145,7 +121,7 @@ func (m *AuthMiddleware) GinAuthenticate(c *gin.Context) {
 	// Extract token from Authorization header
 	authHeader := c.GetHeader("Authorization")
 	if authHeader == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Authentication required"})
+		m.responseHandler.GinUnauthorized(c, "Authentication required")
 		c.Abort()
 		return
 	}
@@ -153,49 +129,25 @@ func (m *AuthMiddleware) GinAuthenticate(c *gin.Context) {
 	// Check if the Authorization header has the right format
 	bearerToken := strings.Split(authHeader, " ")
 	if len(bearerToken) != 2 || bearerToken[0] != "Bearer" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid authorization format, expected 'Bearer {token}'"})
+		m.responseHandler.GinUnauthorized(c, "Invalid authorization format, expected 'Bearer {token}'")
 		c.Abort()
 		return
 	}
 
 	// Parse the token
 	tokenStr := bearerToken[1]
-	validKeys := m.keyManager.GetValidKeys()
-	var validToken *jwt.Token
 
-	for _, key := range validKeys {
-		token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
-			// Validate signing algorithm
-			if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token signing method"})
-				return nil, nil
-			}
-			return key.PublicKey, nil
-		})
+	validToken, err := m.jwtUtils.DecryptClaims(tokenStr)
 
-		if err == nil && token.Valid {
-			validToken = token
-			break
-		}
-	}
-
-	if validToken == nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
+	if err != nil || validToken == nil {
+		m.responseHandler.GinUnauthorized(c, "Invalid or expired token")
 		c.Abort()
 		return
 	}
 
-	// Extract user ID from token claims
-	claims, ok := validToken.Claims.(jwt.MapClaims)
+	userID, ok := validToken["user_id"].(string)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token claims"})
-		c.Abort()
-		return
-	}
-
-	userID, ok := claims["user_id"].(string)
-	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID in token"})
+		m.responseHandler.GinUnauthorized(c, "Invalid user ID in token")
 		c.Abort()
 		return
 	}

@@ -35,7 +35,7 @@ func NewPostgresUserRepository(rwDB *database.ReadWriteDatabase, log *logger.Log
 // GetUserByID retrieves a user profile by ID
 func (r *PostgresUserRepository) GetUserByID(ctx context.Context, id string) (*user.Profile, error) {
 	query := `
-		SELECT id, email, first_name, last_name, created_at, updated_at
+		SELECT id, email, email_verified, name, is_active, country, city, created_at
 		FROM users
 		WHERE id = $1
 	`

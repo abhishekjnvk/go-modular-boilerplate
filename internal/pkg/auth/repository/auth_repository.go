@@ -1,4 +1,4 @@
-package authRepository
+package auth
 
 import (
 	"context"
@@ -12,10 +12,12 @@ import (
 
 // AuthRepository defines the interface for authentication operations
 type AuthRepository interface {
-	FindUserByEmail(ctx context.Context, email string) (*auth.User, error)
+	FindUserByEmail(ctx context.Context, email string, vendorId string) (*auth.User, error)
+	FindUserByID(ctx context.Context, userID string) (*auth.User, error)
 	CreateUser(ctx context.Context, user *auth.User) error
 	CreateSession(ctx context.Context, session *auth.Session) error
 	FindSessionByTokenHash(ctx context.Context, tokenHash string) (*auth.Session, error)
+	FindSessionByID(ctx context.Context, sessionID string) (*auth.Session, error)
 	UpdateSessionLastUsed(ctx context.Context, sessionID string) error
 	RevokeSession(ctx context.Context, sessionID string) error
 }
@@ -35,15 +37,35 @@ func NewPostgresAuthRepository(rwDB *database.ReadWriteDatabase, log *logger.Log
 }
 
 // FindUserByEmail finds a user by email
-func (r *PostgresAuthRepository) FindUserByEmail(ctx context.Context, email string) (*auth.User, error) {
+func (r *PostgresAuthRepository) FindUserByEmail(ctx context.Context, email string, vendorId string) (*auth.User, error) {
 	query := `
-		SELECT id, email, password_hash, email_verified, vendor_id, country, city, is_active, is_disabled, enable_social_login, signup_source, created_at
+		SELECT id, email, password_hash, email_verified, vendor_id, country, city, is_active, is_disabled, enable_social_login, created_at
 		FROM users
-		WHERE email = $1 AND is_active = true
+		WHERE email = $1 AND vendor_id = $2 AND is_active = true
 	`
 
 	var user auth.User
-	err := r.rwDB.ReadDB().GetContext(ctx, &user, query, email)
+	err := r.rwDB.ReadDB().GetContext(ctx, &user, query, email, vendorId)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, auth.ErrUserNotFound
+		}
+		return nil, err
+	}
+
+	return &user, nil
+}
+
+// FindUserByID finds a user by ID
+func (r *PostgresAuthRepository) FindUserByID(ctx context.Context, userID string) (*auth.User, error) {
+	query := `
+		SELECT id, email, password_hash, email_verified, vendor_id, country, city, is_active, is_disabled, enable_social_login, signup_source, created_at
+		FROM users
+		WHERE id = $1 AND is_active = true
+	`
+
+	var user auth.User
+	err := r.rwDB.ReadDB().GetContext(ctx, &user, query, userID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, auth.ErrUserNotFound
@@ -84,7 +106,7 @@ func (r *PostgresAuthRepository) CreateUser(ctx context.Context, user *auth.User
 // CreateSession creates a new session
 func (r *PostgresAuthRepository) CreateSession(ctx context.Context, session *auth.Session) error {
 	query := `
-		INSERT INTO auth_session (id, user_id, token_hash, ip_address, device_name, device_fingerprint, is_active, trusted_device, created_at, valid_till, last_used, revoked_at)
+		INSERT INTO auth_session (id, user_id, refresh_token_hash, ip_address, device_name, device_fingerprint, is_active, trusted_device, created_at, valid_till, last_used, revoked_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 	`
 
@@ -93,7 +115,7 @@ func (r *PostgresAuthRepository) CreateSession(ctx context.Context, session *aut
 		query,
 		session.ID,
 		session.UserID,
-		session.TokenHash,
+		session.RefreshTokenHash,
 		session.IPAddress,
 		session.DeviceName,
 		session.DeviceFingerprint,
@@ -111,16 +133,36 @@ func (r *PostgresAuthRepository) CreateSession(ctx context.Context, session *aut
 // FindSessionByTokenHash finds a session by token hash
 func (r *PostgresAuthRepository) FindSessionByTokenHash(ctx context.Context, tokenHash string) (*auth.Session, error) {
 	query := `
-		SELECT id, user_id, token_hash, ip_address, device_name, device_fingerprint, is_active, trusted_device, created_at, valid_till, last_used, revoked_at
+		SELECT id, user_id, refresh_token_hash, ip_address, device_name, device_fingerprint, is_active, trusted_device, created_at, valid_till, last_used, revoked_at
 		FROM auth_session
-		WHERE token_hash = $1 AND is_active = true
+		WHERE refresh_token_hash = $1 AND is_active = true
 	`
 
 	var session auth.Session
 	err := r.rwDB.ReadDB().GetContext(ctx, &session, query, tokenHash)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, auth.ErrUserNotFound // Could define ErrSessionNotFound
+			return nil, auth.ErrSessionNotFound
+		}
+		return nil, err
+	}
+
+	return &session, nil
+}
+
+// FindSessionByID finds a session by ID
+func (r *PostgresAuthRepository) FindSessionByID(ctx context.Context, sessionID string) (*auth.Session, error) {
+	query := `
+		SELECT id, user_id, refresh_token_hash, ip_address, device_name, device_fingerprint, is_active, trusted_device, created_at, valid_till, last_used, revoked_at
+		FROM auth_session
+		WHERE id = $1 AND is_active = true AND valid_till > CURRENT_TIMESTAMP
+	`
+
+	var session auth.Session
+	err := r.rwDB.ReadDB().GetContext(ctx, &session, query, sessionID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, auth.ErrSessionNotFound
 		}
 		return nil, err
 	}

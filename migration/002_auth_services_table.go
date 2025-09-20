@@ -6,12 +6,12 @@ type authServiceMigration struct{}
 
 func (m *authServiceMigration) Up(tx *sql.Tx) error {
 	_, err := tx.Exec(`
-            -- Create org table
-            CREATE TABLE org (
-                id VARCHAR(25) PRIMARY KEY, 
+            -- Create orgs table
+            CREATE TABLE orgs (
+                id VARCHAR(50) PRIMARY KEY, 
                 name VARCHAR(255) NOT NULL,
                 activation_code VARCHAR(50),
-                vendor_id VARCHAR(25) NOT NULL,
+                vendor_id VARCHAR(50) NOT NULL,
                 website_url VARCHAR(255),
                 created_by VARCHAR(25) NOT NULL,
                 created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
@@ -21,35 +21,36 @@ func (m *authServiceMigration) Up(tx *sql.Tx) error {
 
             -- Create roles table
             CREATE TABLE roles (
-                id VARCHAR(25) PRIMARY KEY,
+                id VARCHAR(50) PRIMARY KEY,
                 name VARCHAR(255) NOT NULL,
                 permissions JSONB DEFAULT '{}'::JSONB,
-                org_id VARCHAR(25) NOT NULL,
+                org_id VARCHAR(50) NOT NULL,
                 is_active BOOLEAN DEFAULT TRUE,
                 is_admin BOOLEAN DEFAULT FALSE,
                 data_hash VARCHAR(50),
                 description TEXT,
-                vendor_id VARCHAR(25),
+                vendor_id VARCHAR(50),
                 created_by VARCHAR(25) NOT NULL,
                 created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (org_id) REFERENCES org(id) ON UPDATE CASCADE ON DELETE CASCADE
+                FOREIGN KEY (org_id) REFERENCES orgs(id) ON UPDATE CASCADE ON DELETE CASCADE
             );
 
             CREATE INDEX roles_index_org_id ON roles (org_id, is_active) WHERE is_active = TRUE;
 
             -- Create users table
             CREATE TABLE users (
-                id VARCHAR(25) PRIMARY KEY,
+                id VARCHAR(50) PRIMARY KEY,
+                name VARCHAR(100) DEFAULT '',
                 email VARCHAR(255) NOT NULL UNIQUE,
                 password_hash VARCHAR(255) NOT NULL,
                 email_verified BOOLEAN DEFAULT FALSE,
-                vendor_id VARCHAR(25) NOT NULL,
-                country VARCHAR(2),
-                city VARCHAR(50),
+                vendor_id VARCHAR(50) NOT NULL,
+                country VARCHAR(2) DEFAULT '',
+                city VARCHAR(50) DEFAULT '',
                 is_active BOOLEAN DEFAULT TRUE,
                 is_disabled BOOLEAN DEFAULT FALSE,
                 enable_social_login BOOLEAN DEFAULT FALSE,
-                signup_source VARCHAR(25),
+                signup_source VARCHAR(25) DEFAULT '',
                 created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
             );
 
@@ -58,8 +59,8 @@ func (m *authServiceMigration) Up(tx *sql.Tx) error {
 
             -- Create verification_token table
             CREATE TABLE verification_token (
-                id VARCHAR(25) PRIMARY KEY,
-                user_id VARCHAR(25) NOT NULL,
+                id VARCHAR(50) PRIMARY KEY,
+                user_id VARCHAR(50) NOT NULL,
                 token_type VARCHAR(25) NOT NULL,
                 created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                 valid_till TIMESTAMPTZ NOT NULL,
@@ -68,8 +69,8 @@ func (m *authServiceMigration) Up(tx *sql.Tx) error {
 
             -- Create sso_config table
             CREATE TABLE sso_config (
-                id VARCHAR(25) PRIMARY KEY,
-                org_id VARCHAR(25) NOT NULL,
+                id VARCHAR(50) PRIMARY KEY,
+                org_id VARCHAR(50) NOT NULL,
                 client_id VARCHAR(255) NOT NULL,
                 client_secret VARCHAR(255) NOT NULL,
                 discovery_url VARCHAR(255),
@@ -84,7 +85,7 @@ func (m *authServiceMigration) Up(tx *sql.Tx) error {
                 is_active BOOLEAN NOT NULL DEFAULT TRUE,
                 created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMPTZ,
-                FOREIGN KEY (org_id) REFERENCES org(id) ON UPDATE CASCADE ON DELETE CASCADE
+                FOREIGN KEY (org_id) REFERENCES orgs(id) ON UPDATE CASCADE ON DELETE CASCADE
             );
 
             CREATE INDEX sso_config_index_org_id ON sso_config (org_id) WHERE is_active = TRUE;
@@ -92,12 +93,12 @@ func (m *authServiceMigration) Up(tx *sql.Tx) error {
 
             -- Create auth_session table
             CREATE TABLE auth_session (
-                id VARCHAR(25) PRIMARY KEY,
-                user_id VARCHAR(25) NOT NULL,
-                token_hash VARCHAR(50) NOT NULL,
-                ip_address VARCHAR(100) NOT NULL,
-                device_name VARCHAR(50),
-                device_fingerprint VARCHAR(50),
+                id VARCHAR(50) PRIMARY KEY,
+                user_id VARCHAR(50) NOT NULL,
+                refresh_token_hash VARCHAR(255) NOT NULL,
+                ip_address VARCHAR(255) NOT NULL,
+                device_name VARCHAR(255),
+                device_fingerprint VARCHAR(255),
                 is_active BOOLEAN DEFAULT TRUE,
                 trusted_device BOOLEAN DEFAULT FALSE,
                 created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
@@ -107,21 +108,21 @@ func (m *authServiceMigration) Up(tx *sql.Tx) error {
                 FOREIGN KEY (user_id) REFERENCES users(id) ON UPDATE CASCADE ON DELETE CASCADE
             );
 
-            CREATE INDEX auth_session_index_token_hash ON auth_session (token_hash) WHERE is_active = TRUE;
+            CREATE INDEX auth_session_index_refresh_token_hash ON auth_session (refresh_token_hash) WHERE is_active = TRUE;
             CREATE INDEX auth_session_index_user_valid_till ON auth_session (user_id, valid_till) WHERE is_active = TRUE;
 
             -- Create org_user table
             CREATE TABLE org_user (
-                id VARCHAR(25) PRIMARY KEY,
-                user_id VARCHAR(25) NOT NULL,
-                org_id VARCHAR(25) NOT NULL,
-                role_id VARCHAR(25) NOT NULL,
+                id VARCHAR(50) PRIMARY KEY,
+                user_id VARCHAR(50) NOT NULL,
+                org_id VARCHAR(50) NOT NULL,
+                role_id VARCHAR(50) NOT NULL,
                 created_by VARCHAR(25) NOT NULL,
                 created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                 last_login TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                 is_active BOOLEAN DEFAULT TRUE,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON UPDATE CASCADE ON DELETE CASCADE,
-                FOREIGN KEY (org_id) REFERENCES org(id) ON UPDATE CASCADE ON DELETE CASCADE,
+                FOREIGN KEY (org_id) REFERENCES orgs(id) ON UPDATE CASCADE ON DELETE CASCADE,
                 FOREIGN KEY (role_id) REFERENCES roles(id) ON UPDATE CASCADE ON DELETE CASCADE,
                 UNIQUE (org_id, user_id)
             );
@@ -131,9 +132,9 @@ func (m *authServiceMigration) Up(tx *sql.Tx) error {
 
             -- Create mfa_methods table
             CREATE TABLE mfa_methods (
-                id VARCHAR(25) PRIMARY KEY,
+                id VARCHAR(50) PRIMARY KEY,
                 device_name VARCHAR(255) NOT NULL,
-                user_id VARCHAR(25) NOT NULL,
+                user_id VARCHAR(50) NOT NULL,
                 method VARCHAR(50) NOT NULL,
                 created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                 is_active BOOLEAN DEFAULT FALSE,
@@ -174,7 +175,7 @@ func (m *authServiceMigration) Down(tx *sql.Tx) error {
 			DROP TABLE IF EXISTS verification_token;
 			DROP TABLE IF EXISTS roles;
 			DROP TABLE IF EXISTS users;
-			DROP TABLE IF EXISTS org;
+			DROP TABLE IF EXISTS orgs;
 	`)
 	return err
 }

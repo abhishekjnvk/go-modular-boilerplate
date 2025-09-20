@@ -34,23 +34,38 @@ func Validate(s interface{}) error {
 	return validate.Struct(s)
 }
 
-// Domain errors for user module
+// Domain errors for user module with appropriate HTTP status codes
 var (
-	ErrUserNotFound = NewUserError("user not found")
+	ErrUserNotFound = NewUserErrorWithCode("user not found", 404)
 )
 
-// UserError represents a user-related error
+// UserError represents a user-related error with HTTP status code
 type UserError struct {
 	Message string
+	Code    int // HTTP status code
 }
 
-// NewUserError creates a new UserError
+// NewUserError creates a new UserError with default 500 status
 func NewUserError(message string) *UserError {
 	return &UserError{
 		Message: message,
+		Code:    500, // Default to internal server error
+	}
+}
+
+// NewUserErrorWithCode creates a new UserError with specific HTTP status code
+func NewUserErrorWithCode(message string, code int) *UserError {
+	return &UserError{
+		Message: message,
+		Code:    code,
 	}
 }
 
 func (e *UserError) Error() string {
 	return e.Message
+}
+
+// StatusCode returns the HTTP status code for this error
+func (e *UserError) StatusCode() int {
+	return e.Code
 }

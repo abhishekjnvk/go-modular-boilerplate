@@ -38,7 +38,9 @@ type Config struct {
 	RedisClusterDB       int      `mapstructure:"redis_cluster_db"`
 
 	// JWT configuration
-	JWTExpiryHours int `mapstructure:"jwt_expiry_hours"`
+	RefreshTokenExpiryHour int    `mapstructure:"jwt_refresh_token_expiry_hours"`
+	AccessTokenExpiryHour  int    `mapstructure:"jwt_access_token_expiry_hours"`
+	JWTIssuer              string `mapstructure:"jwt_issuer"`
 
 	// Security headers configuration
 	SecurityHeadersEnabled  bool   `mapstructure:"security_headers_enabled"`
@@ -59,7 +61,11 @@ type Config struct {
 func LoadConfig(path string) (*Config, error) {
 	// Set default values
 	viper.SetDefault("server_port", 8080)
-	viper.SetDefault("jwt_expiry_hours", 24)
+
+	viper.SetDefault("jwt_refresh_token_expiry_hours", 24*7)
+	viper.SetDefault("jwt_access_token_expiry_hours", 1)
+	viper.SetDefault("jwt_issuer", "go-boilerplate")
+
 	viper.SetDefault("jwk_rotation_cron", "0 0 * * *") // Default: daily at midnight
 	viper.SetDefault("environment", "development")
 

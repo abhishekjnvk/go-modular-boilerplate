@@ -14,15 +14,17 @@ import (
 
 // HealthHandler handles HTTP requests for health checks
 type HealthHandler struct {
-	service healthService.HealthService
-	logger  *logger.Logger
+	service         healthService.HealthService
+	logger          *logger.Logger
+	responseHandler *utils.ResponseHandler
 }
 
 // NewHealthHandler creates a new health handler
 func NewHealthHandler(service *healthService.HealthService, logger *logger.Logger) *HealthHandler {
 	return &HealthHandler{
-		service: *service,
-		logger:  logger.Named("health-handler"),
+		service:         *service,
+		logger:          logger.Named("health-handler"),
+		responseHandler: utils.NewResponseHandler(logger.Named("health-responses")),
 	}
 }
 
@@ -46,7 +48,12 @@ func (h *HealthHandler) Health(w http.ResponseWriter, r *http.Request) {
 		zap.Duration("duration", time.Since(start)),
 	)
 
-	utils.RespondWithJSON(w, statusCode, healthStatus)
+	// Use standardized response format
+	if healthStatus.Status == "healthy" {
+		h.responseHandler.Success(w, r.Context(), healthStatus, "Health check passed")
+	} else {
+		h.responseHandler.Error(w, r.Context(), "Health check failed", statusCode)
+	}
 }
 
 // Ready responds with the readiness status
@@ -69,7 +76,12 @@ func (h *HealthHandler) Ready(w http.ResponseWriter, r *http.Request) {
 		zap.Duration("duration", time.Since(start)),
 	)
 
-	utils.RespondWithJSON(w, statusCode, readinessStatus)
+	// Use standardized response format
+	if readinessStatus.Status == "ready" {
+		h.responseHandler.Success(w, r.Context(), readinessStatus, "Readiness check passed")
+	} else {
+		h.responseHandler.Error(w, r.Context(), "Readiness check failed", statusCode)
+	}
 }
 
 // GinHealth provides Gin-compatible health check endpoint
@@ -92,7 +104,12 @@ func (h *HealthHandler) GinHealth(c *gin.Context) {
 		zap.Duration("duration", time.Since(start)),
 	)
 
-	c.JSON(statusCode, healthStatus)
+	// Use standardized response format
+	if healthStatus.Status == "healthy" {
+		h.responseHandler.GinSuccess(c, healthStatus, "Health check passed")
+	} else {
+		h.responseHandler.GinError(c, "Health check failed", statusCode)
+	}
 }
 
 // GinReady provides Gin-compatible readiness check endpoint
@@ -115,5 +132,10 @@ func (h *HealthHandler) GinReady(c *gin.Context) {
 		zap.Duration("duration", time.Since(start)),
 	)
 
-	c.JSON(statusCode, readinessStatus)
+	// Use standardized response format
+	if readinessStatus.Status == "ready" {
+		h.responseHandler.GinSuccess(c, readinessStatus, "Readiness check passed")
+	} else {
+		h.responseHandler.GinError(c, "Readiness check failed", statusCode)
+	}
 }

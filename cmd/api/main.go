@@ -21,7 +21,6 @@ import (
 	userHttp "go-boilerplate/internal/pkg/user/delivery/http"
 	userRepository "go-boilerplate/internal/pkg/user/repository"
 	userService "go-boilerplate/internal/pkg/user/service"
-	"go-boilerplate/internal/shared"
 	"go-boilerplate/internal/shared/cache"
 	"go-boilerplate/internal/shared/database"
 	"go-boilerplate/internal/shared/logger"
@@ -55,7 +54,7 @@ func main() {
 	defer rwDB.Close()
 
 	// Start database health monitoring
-	ctx := context.Background()
+	// ctx := context.Background()
 
 	// Initialize Redis connection
 	redisConfig := cache.DefaultConfig(cfg)
@@ -65,17 +64,15 @@ func main() {
 	}
 	defer redisClient.Close()
 
-	// Initialize JWT key manager
-	keyManager := shared.NewJWKKeyManager(appLogger.Logger)
-
 	// Initialize middleware
-	authMiddleware, err := middleware.NewAuthMiddleware(keyManager, appLogger)
+	authMiddleware, err := middleware.NewAuthMiddleware(appLogger)
 	if err != nil {
 		appLogger.Fatal("Failed to initialize auth middleware", zap.Error(err))
 	}
 	loggingMiddleware := middleware.NewLoggingMiddleware(appLogger)
 	recoveryMiddleware := middleware.NewRecoveryMiddleware(appLogger)
 	securityMiddleware := middleware.NewSecurityMiddleware(appLogger, cfg.Environment == "development")
+	requestIDMiddleware := middleware.NewRequestIDMiddleware(appLogger)
 
 	// Initialize rate limiting middleware
 	rateLimitConfig := middleware.DefaultRateLimitConfig()
@@ -86,7 +83,7 @@ func main() {
 	userRepo := userRepository.NewPostgresUserRepository(rwDB, appLogger)
 
 	// Initialize services
-	authSvc, err := authService.NewAuthService(authRepo, cfg, appLogger, metricsCollector, keyManager)
+	authSvc, err := authService.NewAuthService(authRepo, cfg, appLogger, metricsCollector)
 	if err != nil {
 		appLogger.Fatal("Failed to initialize auth service", zap.Error(err))
 	}
@@ -113,6 +110,7 @@ func main() {
 		RecoveryMiddleware:  recoveryMiddleware,
 		SecurityMiddleware:  securityMiddleware,
 		RateLimitMiddleware: rateLimitMiddleware,
+		RequestIDMiddleware: requestIDMiddleware,
 		Metrics:             metricsCollector,
 	}
 
