@@ -7,9 +7,9 @@ import (
 	cron "github.com/robfig/cron/v3"
 	"go.uber.org/zap"
 
+	"go-boilerplate/internal/database"
 	services "go-boilerplate/internal/scheduler/services"
 	"go-boilerplate/internal/shared/cache"
-	"go-boilerplate/internal/shared/database"
 	"go-boilerplate/internal/shared/logger"
 	"go-boilerplate/internal/shared/metrics"
 )

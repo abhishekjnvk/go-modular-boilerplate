@@ -43,6 +43,7 @@ func (h *AuthHandler) getDeviceInfo(r *http.Request) *auth.DeviceInfo {
 
 	return &auth.DeviceInfo{
 		Name:        di.DeviceName,
+		UserAgent:   r.Header.Get("User-Agent"),
 		Fingerprint: di.Fingerprint,
 		TrustScore:  di.RiskScore,
 		City:        di.City,

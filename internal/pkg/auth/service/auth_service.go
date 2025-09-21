@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"time"
 
@@ -40,7 +41,7 @@ type AuthService interface {
 
 // DefaultAuthService is the default implementation of AuthService
 type DefaultAuthService struct {
-	repo       authRepository.AuthRepository
+	repo       authRepository.SqlcAuthRepository
 	config     *config.Config
 	logger     *logger.Logger
 	metrics    *metrics.Metrics
@@ -49,7 +50,7 @@ type DefaultAuthService struct {
 }
 
 // NewAuthService creates a new authentication service
-func NewAuthService(repo authRepository.AuthRepository, cfg *config.Config, log *logger.Logger, metrics *metrics.Metrics) (AuthService, error) {
+func NewAuthService(repo authRepository.SqlcAuthRepository, cfg *config.Config, log *logger.Logger, metrics *metrics.Metrics) (AuthService, error) {
 	jwtUtils := sharedUtils.NewJWTUtils()
 	keyManager := jwkKeyManager.NewJWKKeyManager(log.Logger)
 
@@ -130,6 +131,7 @@ func (s *DefaultAuthService) Login(ctx context.Context, req *auth.LoginRequest, 
 		RefreshTokenHash:  refreshTokenHashStr,
 		IPAddress:         ipAddress,
 		DeviceName:        deviceInfo.Name,
+		UserAgent:         deviceInfo.UserAgent,
 		TrustScore:        deviceInfo.TrustScore,
 		City:              deviceInfo.City,
 		Country:           deviceInfo.Country,
@@ -179,7 +181,7 @@ func (s *DefaultAuthService) Register(ctx context.Context, req *auth.RegisterReq
 	_, err := s.repo.FindUserByEmail(ctx, req.Email, req.VendorID)
 	if err == nil {
 		return nil, auth.ErrUserAlreadyExists
-	} else if err != auth.ErrUserNotFound {
+	} else if !errors.Is(err, auth.ErrUserNotFound) {
 		return nil, err
 	}
 
@@ -229,6 +231,7 @@ func (s *DefaultAuthService) Register(ctx context.Context, req *auth.RegisterReq
 			RefreshTokenHash:  tokenHashStr,
 			IPAddress:         ipAddress,
 			DeviceName:        deviceInfo.Name,
+			UserAgent:         deviceInfo.UserAgent,
 			TrustScore:        deviceInfo.TrustScore,
 			City:              deviceInfo.City,
 			Country:           deviceInfo.Country,

@@ -8,8 +8,8 @@ import (
 
 	"go.uber.org/zap"
 
+	"go-boilerplate/internal/database"
 	"go-boilerplate/internal/shared/cache"
-	"go-boilerplate/internal/shared/database"
 	"go-boilerplate/internal/shared/logger"
 	"go-boilerplate/internal/shared/metrics"
 )

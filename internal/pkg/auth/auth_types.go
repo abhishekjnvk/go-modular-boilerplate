@@ -30,6 +30,7 @@ type Session struct {
 	RefreshTokenHash  string     `json:"-" db:"refresh_token_hash"` // Token hash, not returned in JSON
 	IPAddress         string     `json:"ip_address" db:"ip_address"`
 	DeviceName        string     `json:"device_name" db:"device_name"`
+	UserAgent         string     `json:"user_agent" db:"user_agent"`
 	TrustScore        int        `json:"trust_score" db:"trust_score"`
 	City              string     `json:"city" db:"city"`
 	Country           string     `json:"country" db:"country"`
@@ -48,6 +49,7 @@ type Session struct {
 // DeviceInfo represents simplified device information for session tracking
 type DeviceInfo struct {
 	Name        string `json:"device_name"` // Format: "Browser (OS) - OS_Version"
+	UserAgent   string `json:"user_agent"`
 	Fingerprint string `json:"device_fingerprint"`
 	TrustScore  int    `json:"trust_score"` // Risk score from 0-100
 	City        string `json:"city,omitempty"`

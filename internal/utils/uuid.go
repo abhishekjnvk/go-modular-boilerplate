@@ -14,6 +14,11 @@ const (
 	idLength = 18
 )
 
+// GenerateUUID generates a new UUID string
+func GenerateUUID() string {
+	return uuid.New().String()
+}
+
 func getNanoIDWithSize(idSize int) string {
 	const TIMESTAMP_LENGTH = 11 // length of base36 encoded timestamp in milliseconds
 

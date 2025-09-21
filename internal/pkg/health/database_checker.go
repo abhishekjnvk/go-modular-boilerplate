@@ -7,7 +7,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"go-boilerplate/internal/shared/database"
+	"go-boilerplate/internal/database"
 	"go-boilerplate/internal/shared/logger"
 )
 

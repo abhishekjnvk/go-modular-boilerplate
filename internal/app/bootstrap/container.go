@@ -8,6 +8,7 @@ import (
 	"go.uber.org/zap"
 
 	"go-boilerplate/internal/app/config"
+	"go-boilerplate/internal/database"
 	authHttp "go-boilerplate/internal/pkg/auth/delivery/http"
 	authRepository "go-boilerplate/internal/pkg/auth/repository"
 	authService "go-boilerplate/internal/pkg/auth/service"
@@ -18,7 +19,6 @@ import (
 	userRepository "go-boilerplate/internal/pkg/user/repository"
 	userService "go-boilerplate/internal/pkg/user/service"
 	"go-boilerplate/internal/shared/cache"
-	"go-boilerplate/internal/shared/database"
 	"go-boilerplate/internal/shared/logger"
 	"go-boilerplate/internal/shared/metrics"
 	"go-boilerplate/internal/shared/middleware"
@@ -32,12 +32,13 @@ type Container struct {
 	Metrics *metrics.Metrics
 
 	// Database and Cache
-	Database *database.ReadWriteDatabase
-	Cache    *cache.Redis
+	Database    *database.ReadWriteDatabase
+	PgxDatabase *database.PgxReadWriteDB
+	Cache       *cache.Redis
 
 	// Repositories
-	AuthRepository authRepository.AuthRepository
-	UserRepository userRepository.UserRepository
+	AuthRepository authRepository.SqlcAuthRepository
+	UserRepository userRepository.SqlcUserRepository
 
 	// Services
 	AuthService   authService.AuthService
@@ -139,6 +140,14 @@ func (c *Container) initDatabase() error {
 	}
 
 	c.Database = rwDB
+
+	// Initialize pgx database for sqlc
+	pgxDB, err := database.NewPgxReadWriteDB(c.Config, c.Logger)
+	if err != nil {
+		return fmt.Errorf("failed to create pgx database: %w", err)
+	}
+	c.PgxDatabase = pgxDB
+
 	c.Logger.Info("Database initialized successfully")
 	return nil
 }
@@ -166,8 +175,8 @@ func (c *Container) initCache() error {
 
 // initRepositories initializes all repositories
 func (c *Container) initRepositories() error {
-	c.AuthRepository = authRepository.NewPostgresAuthRepository(c.Database, c.Logger)
-	c.UserRepository = userRepository.NewPostgresUserRepository(c.Database, c.Logger)
+	c.AuthRepository = authRepository.NewSqlcAuthRepository(c.PgxDatabase, c.Logger)
+	c.UserRepository = userRepository.NewSqlcUserRepository(c.PgxDatabase, c.Logger)
 
 	c.Logger.Info("Repositories initialized successfully")
 	return nil
@@ -286,6 +295,11 @@ func (c *Container) Close() error {
 		if err := c.Database.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("failed to close database: %w", err))
 		}
+	}
+
+	// Close pgx database connections
+	if c.PgxDatabase != nil {
+		c.PgxDatabase.Close()
 	}
 
 	// Close cache connections

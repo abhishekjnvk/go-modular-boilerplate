@@ -2,40 +2,100 @@
 
 A production-ready Go web application boilerplate with enterprise-grade features including security, monitoring, database optimization, and scalable architecture.
 
+## Table of Contents
+- [Getting Started](#getting-started)
+- [Features](#-features)
+- [Project Structure](#-project-structure)
+- [Database Development Workflow](#-database-development-workflow)
+- [Security Features](#security-features)
+- [Database Features](#database-features)
+- [Redis Features](#redis-features)
+- [Monitoring & Health Checks](#monitoring--health-checks)
+- [Migrations](#-migrations)
+- [Documentation](#documentation)
+
+## Documentation
+
+- **[📖 Development Guide](docs/DEVELOPMENT_GUIDE.md)** - Comprehensive development workflows, migration guide, and best practices
+- **[🏗️ Architecture Guide](ARCHITECTURE.md)** - System architecture and design patterns
+- **[🔧 Dependency Injection Guide](docs/DEPENDENCY_INJECTION.md)** - DI container and service management
+- **[📊 sqlc Integration Guide](docs/SQLC_INTEGRATION_GUIDE.md)** - Type-safe SQL code generation
+- **[�️ Migration System Guide](docs/MIGRATION_SYSTEM.md)** - Database migration system documentation
+- **[�🚀 Production Roadmap](docs/PRODUCTION_ROADMAP.md)** - Production enhancement recommendations
+
 # Getting Started
-Developer quick start:
+
+## Quick Start
 
 ### Prerequisites
 - Go 1.21+
 - PostgreSQL 13+
 - Redis 6+
+- [golang-migrate](https://github.com/golang-migrate/migrate) (for database migrations)
+- [sqlc](https://sqlc.dev/) (for type-safe SQL code generation)
 
+### Development Setup
 
-1. Start dependencies
+1. **Start Dependencies**
 ```bash
 docker-compose up -d postgres redis
 ```
 
-2. **Configuration**:
-   ```bash
-   cp configs/config.example configs/config.yaml
-   # Edit config.yaml with your credentials
-   ```
-
-3. Run migrations
+2. **Configure Application**
 ```bash
-go run scripts/migration/migrate.go -dir up
+cp configs/config.example.yaml configs/config.yaml
+# Edit config.yaml with your database and Redis credentials
 ```
 
-4. Run the API
+3. **Setup Database Schema**
 ```bash
+# Run database migrations (Go tool - recommended)
+go run cmd/migrate/main.go up
+# OR: make migrate-up
+
+# Verify migration status
+go run cmd/migrate/main.go status
+# OR: make migrate-status
+
+# Alternative: Use bash script
+# ./scripts/migrate.sh up
+```
+
+4. **Generate Type-Safe Database Code**
+```bash
+# Generate Go code from SQL queries and schema
+sqlc generate
+```
+
+5. **Run the Application**
+```bash
+# Development with live reload
+make dev
+
+# Or run normally
 make run
 ```
 
-5. Run With Live Reload
+6. **Verify Setup**
 ```bash
-make dev
+# Check health endpoints
+curl http://localhost:8080/health
+curl http://localhost:8080/health/db
+curl http://localhost:8080/health/redis
 ```
+
+### Next Steps
+
+📖 **Read the [Development Guide](docs/DEVELOPMENT_GUIDE.md)** for:
+- Complete database migration workflows
+- Adding new features step-by-step
+- sqlc code generation patterns
+- Testing and deployment practices
+
+🏗️ **Explore the Architecture** in [ARCHITECTURE.md](ARCHITECTURE.md):
+- Clean Architecture patterns
+- Database layer design
+- Service organization
 
 ## 🚀 Features
 
@@ -46,11 +106,13 @@ make dev
 - **Security Headers**: Comprehensive security headers (CSP, HSTS, etc.)
 
 ### Database & Caching
-- **PostgreSQL**: Primary database with connection pooling
-- **Read/Write Splitting**: Automatic routing to read replicas
-- **Redis Caching**: Session management and data caching
-- **Redis Cluster**: Horizontal scaling and high availability
-- **Query Monitoring**: Slow query detection and logging
+- **PostgreSQL**: Primary database with connection pooling and read/write splitting
+- **golang-migrate**: Industry-standard database migrations with rollback support
+- **sqlc + pgx**: Type-safe SQL code generation with ~40% performance improvement
+- **Migration-First Architecture**: Database schema as single source of truth
+- **Redis Caching**: Session management and data caching with cluster support
+- **Query Monitoring**: Slow query detection and comprehensive logging
+- **Compile-time SQL Validation**: Prevent runtime SQL errors with sqlc type safety
 
 ### Monitoring & Logging
 - **Structured Logging**: JSON-based logging with file rotation
@@ -146,11 +208,11 @@ logs/
 ├── error.log
 ├── info.log
 └── warn.log
-migration/
-├── 001_create_test_table.go
-└── migration.go
+migrations/
+├── 000001_initial_schema.down.sql
+└── 000001_initial_schema.up.sql
 scripts/
-└── migrate.go
+└── migrate.sh
 tmp/
 ├── build-errors.log
 └── main
@@ -257,26 +319,337 @@ result := redisClient.Get(ctx, "key")
 
 ## 🧩 Migrations
 
-This project includes a simple migration system under `migration` and a CLI runner at `scripts/migrate.go`.
+This project uses [golang-migrate](https://github.com/golang-migrate/migrate) for database migrations with both a convenient helper script and a modern Go tool.
 
-- Migration files live in `migration` and register themselves using `Register(id, name, migration)` in `init()`.
-- Each migration implements two methods:
-  - `Up(tx *sql.Tx) error` — apply the migration inside a transaction.
-  - `Down(tx *sql.Tx) error` — rollback the migration inside a transaction.
+- Migration files are SQL-based and located in the `migrations/` directory
+- Each migration has a `.up.sql` file (apply changes) and a `.down.sql` file (rollback changes)
+- Migration files are named with a sequence number: `000001_description.up.sql` and `000001_description.down.sql`
+- Use either the `scripts/migrate.sh` helper script or the modern Go migration tool
 
-### Running migrations
+### Migration Tools
 
-- Apply all pending migrations (Up):
+#### Option 1: Go Migration Tool (Recommended)
+The modern Go-based migration tool loads database configuration from `config.yaml`:
+
 ```bash
-go run scripts/migrate.go --dir up
+# Apply all pending migrations
+go run cmd/migrate/main.go up
+# OR: make migrate-up
+
+# Rollback n migrations
+go run cmd/migrate/main.go down 1
+# OR: make migrate-down n=1
+
+# Check migration status
+go run cmd/migrate/main.go status
+# OR: make migrate-status
+
+# Show current version
+go run cmd/migrate/main.go version
+# OR: make migrate-version
+
+# Force a specific version (use with caution)
+go run cmd/migrate/main.go force 1
+# OR: make migrate-force v=1
+
+# Reset database (drop all + re-run migrations)
+go run cmd/migrate/main.go reset
+# OR: make migrate-reset
 ```
 
-  - Roll back a specific migration id (for example `001`):
+#### Option 2: Bash Script (Legacy)
+The original bash script with environment variable support:
+
 ```bash
-go run scripts/migrate.go --dir down --target 001
+# Apply all pending migrations
+./scripts/migrate.sh up
+
+# Rollback the last migration
+./scripts/migrate.sh down
+
+# Check migration status
+./scripts/migrate.sh status
+
+# Create a new migration
+./scripts/migrate.sh create add_user_table
+
+# Force a specific migration version (use with caution)
+./scripts/migrate.sh force 1
+
+# Show current migration version
+./scripts/migrate.sh version
+
+# Reset database (drop all tables and re-run migrations)
+./scripts/migrate.sh reset
 ```
 
-Notes:
-- Each migration runs in a transaction; on error the transaction is rolled back and the migration process stops.
-- The applied migrations are recorded in the `schema_migrations` table (`id`, `name`, `applied_at`).
-- If you prefer to run migrations against a different DSN without changing `configs`, you can add a `--dsn` flag or `DATABASE_URL` env var fallback to the CLI.
+### Configuration
+
+#### Go Tool Configuration
+The Go migration tool automatically loads database configuration from `configs/config.yaml`:
+```yaml
+db_url: "postgres://user:pass@localhost:5432/dbname?sslmode=disable"
+```
+
+#### Environment Variable Override (Bash Script)
+You can override database connection settings using environment variables:
+
+```bash
+DATABASE_URL="postgres://user:pass@host:port/dbname?sslmode=disable" ./scripts/migrate.sh up
+```
+
+Or set individual components:
+```bash
+DB_HOST=localhost DB_PORT=5432 DB_USER=myuser DB_PASSWORD=mypass DB_NAME=mydb ./scripts/migrate.sh up
+```
+
+### Notes
+
+- Migrations run atomically (each migration in a transaction)
+- Migration state is tracked in the `schema_migrations` table
+- Always test migrations in development before applying to production
+- Use descriptive names for migration files (e.g., `add_user_indexes`, `create_orders_table`)
+- Both tools include safety checks and colored output for better usability
+- The Go tool is recommended for consistency with the rest of the codebase
+
+## 💾 Database Development Workflow
+
+### Schema Changes & Code Generation
+
+This project uses a **migration-first approach** where database migrations are the single source of truth for schema definition.
+
+#### 1. Creating New Tables
+
+```bash
+# Create a new migration for a features table
+./scripts/migrate.sh create add_features_table
+```
+
+This creates:
+- `migrations/000002_add_features_table.up.sql` (apply changes)
+- `migrations/000002_add_features_table.down.sql` (rollback changes)
+
+**Edit the UP migration (`000002_add_features_table.up.sql`):**
+```sql
+CREATE TABLE features (
+    id VARCHAR(50) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    is_enabled BOOLEAN DEFAULT TRUE,
+    created_by VARCHAR(50) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    
+    CONSTRAINT unique_feature_name UNIQUE(name)
+);
+
+CREATE INDEX idx_features_created_at ON features(created_at);
+CREATE INDEX idx_features_name ON features(name);
+```
+
+**Edit the DOWN migration (`000002_add_features_table.down.sql`):**
+```sql
+DROP INDEX IF EXISTS idx_features_name;
+DROP INDEX IF EXISTS idx_features_created_at;
+DROP TABLE IF EXISTS features;
+```
+
+#### 2. Apply Migration
+
+```bash
+# Apply the migration to update database schema
+./scripts/migrate.sh up
+
+# Check migration status
+./scripts/migrate.sh status
+```
+
+#### 3. Create SQL Queries
+
+Create `queries/features.sql` with your database operations:
+
+```sql
+-- name: GetFeatureByID :one
+SELECT id, name, description, is_enabled, created_by, created_at, updated_at
+FROM features 
+WHERE id = $1;
+
+-- name: CreateFeature :one
+INSERT INTO features (id, name, description, is_enabled, created_by)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, name, description, is_enabled, created_by, created_at, updated_at;
+
+-- name: UpdateFeature :one
+UPDATE features 
+SET name = $2, description = $3, is_enabled = $4, updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+RETURNING id, name, description, is_enabled, created_by, created_at, updated_at;
+
+-- name: DeleteFeature :exec
+DELETE FROM features WHERE id = $1;
+
+-- name: ListFeatures :many
+SELECT id, name, description, is_enabled, created_by, created_at, updated_at
+FROM features
+WHERE is_enabled = $1
+ORDER BY created_at DESC
+LIMIT $2 OFFSET $3;
+```
+
+#### 4. Generate Type-Safe Go Code
+
+```bash
+# Generate Go code from SQL queries and schema
+sqlc generate
+```
+
+This reads the database schema from `migrations/` and your queries from `queries/` to generate:
+- `internal/database/sqlc/models.go` - Go structs for database tables
+- `internal/database/sqlc/features.sql.go` - Type-safe query methods
+- `internal/database/sqlc/querier.go` - Interface definitions
+
+#### 5. Implement Repository
+
+Create `internal/pkg/features/repository/sqlc_features_repository.go`:
+
+```go
+package repository
+
+import (
+    "context"
+    "fmt"
+    
+    "go-boilerplate/internal/database"
+    "go-boilerplate/internal/database/sqlc"
+    "go-boilerplate/internal/pkg/features"
+    "go-boilerplate/internal/shared/logger"
+)
+
+type SqlcFeaturesRepository interface {
+    CreateFeature(ctx context.Context, feature *features.Feature) (*features.Feature, error)
+    GetFeatureByID(ctx context.Context, id string) (*features.Feature, error)
+    UpdateFeature(ctx context.Context, id string, updates *features.UpdateRequest) (*features.Feature, error)
+    DeleteFeature(ctx context.Context, id string) error
+    ListFeatures(ctx context.Context, isEnabled bool, limit, offset int32) ([]*features.Feature, error)
+}
+
+type sqlcFeaturesRepository struct {
+    db     *database.PgxReadWriteDB
+    logger *logger.Logger
+}
+
+func NewSqlcFeaturesRepository(db *database.PgxReadWriteDB, log *logger.Logger) SqlcFeaturesRepository {
+    return &sqlcFeaturesRepository{
+        db:     db,
+        logger: log.Named("sqlc-features-repo"),
+    }
+}
+
+func (r *sqlcFeaturesRepository) CreateFeature(ctx context.Context, feature *features.Feature) (*features.Feature, error) {
+    queries := sqlc.New(r.db.WriteDB())
+    
+    params := sqlc.CreateFeatureParams{
+        ID:          feature.ID,
+        Name:        feature.Name,
+        Description: stringToPtr(feature.Description),
+        IsEnabled:   feature.IsEnabled,
+        CreatedBy:   feature.CreatedBy,
+    }
+    
+    row, err := queries.CreateFeature(ctx, params)
+    if err != nil {
+        r.logger.Error("Failed to create feature", zap.Error(err))
+        return nil, fmt.Errorf("failed to create feature: %w", err)
+    }
+    
+    return r.convertFeatureRow(row), nil
+}
+
+// Helper function for nullable strings
+func stringToPtr(s string) *string {
+    if s == "" {
+        return nil
+    }
+    return &s
+}
+
+func ptrToString(s *string) string {
+    if s == nil {
+        return ""
+    }
+    return *s
+}
+
+func (r *sqlcFeaturesRepository) convertFeatureRow(row sqlc.Feature) *features.Feature {
+    return &features.Feature{
+        ID:          row.ID,
+        Name:        row.Name,
+        Description: ptrToString(row.Description),
+        IsEnabled:   row.IsEnabled,
+        CreatedBy:   row.CreatedBy,
+        CreatedAt:   row.CreatedAt,
+        UpdatedAt:   row.UpdatedAt,
+    }
+}
+```
+
+### Migration Troubleshooting
+
+#### Common Issues
+
+**Migration fails with "dirty database":**
+```bash
+# Check current version and status
+./scripts/migrate.sh version
+./scripts/migrate.sh status
+
+# Force to a known good version (use with caution)
+./scripts/migrate.sh force 1
+```
+
+**Need to rollback a migration:**
+```bash
+# Rollback last migration
+./scripts/migrate.sh down
+```
+
+**Development database reset:**
+```bash
+# DEVELOPMENT ONLY - reset entire database
+./scripts/migrate.sh reset
+```
+
+**Environment-specific migrations:**
+```bash
+# Production database
+DATABASE_URL="postgres://user:pass@prod-host:5432/db?sslmode=require" ./scripts/migrate.sh up
+
+# Or set individual components
+DB_HOST=localhost DB_PORT=5432 DB_USER=dev DB_PASSWORD=dev DB_NAME=devdb ./scripts/migrate.sh up
+```
+
+### sqlc Configuration
+
+The `sqlc.yaml` configuration reads schema directly from migration files:
+
+```yaml
+version: "2"
+sql:
+  - engine: "postgresql"
+    queries: "./queries"
+    schema: "./migrations"  # Reads schema from migration files
+    gen:
+      go:
+        package: "sqlc"
+        out: "./internal/database/sqlc"
+        sql_package: "pgx/v5"  # Use high-performance pgx driver
+        emit_interface: true
+        emit_json_tags: true
+        # ... other generation options
+```
+
+**Key benefits:**
+- **Single Source of Truth**: Migrations define schema, sqlc reads from them
+- **Type Safety**: Compile-time validation of SQL queries
+- **Performance**: pgx driver provides ~40% better performance vs database/sql
+- **Zero Boilerplate**: Auto-generated repository methods
